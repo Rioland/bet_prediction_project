@@ -1,0 +1,87 @@
+# Render Blueprint: Football AI Predictor API
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: football-api
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: Dockerfile
+    healthCheckPath: /health
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: football-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: football-redis
+          type: keyvalue
+          property: connectionString
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: FOOTBALL_API_BASE_URL
+        value: https://v3.football.api-sports.io
+      - key: FOOTBALL_API_KEY
+        sync: false
+      - key: SETTINGS_ENCRYPTION_KEY
+        generateValue: true
+      - key: CORS_ORIGINS
+        sync: false
+      - key: ADMIN_COOKIE_SECURE
+        value: "true"
+      - key: ADMIN_COOKIE_SAMESITE
+        value: none
+      - key: ENVIRONMENT
+        value: production
+
+  - type: worker
+    name: football-celery-worker
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: Dockerfile
+    dockerCommand: celery -A app.workers.celery_app.celery worker --loglevel=info
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: football-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: football-redis
+          type: keyvalue
+          property: connectionString
+      - key: JWT_SECRET_KEY
+        fromService:
+          name: football-api
+          type: web
+          envVarKey: JWT_SECRET_KEY
+      - key: FOOTBALL_API_BASE_URL
+        value: https://v3.football.api-sports.io
+      - key: FOOTBALL_API_KEY
+        fromService:
+          name: football-api
+          type: web
+          envVarKey: FOOTBALL_API_KEY
+      - key: SETTINGS_ENCRYPTION_KEY
+        fromService:
+          name: football-api
+          type: web
+          envVarKey: SETTINGS_ENCRYPTION_KEY
+      - key: ENVIRONMENT
+        value: production
+
+  - type: keyvalue
+    name: football-redis
+    plan: free
+    ipAllowList: []
+
+databases:
+  - name: football-db
+    databaseName: football_ai
+    user: football
+    plan: free
