@@ -1,0 +1,1 @@
+- [Football AI Admin port](football-ai-admin-port.md) — Next.js→Vite port details: wouter routing, Zustand auth with isHydrated guard, ROUTE_MIN_ROLES must list every protected path.

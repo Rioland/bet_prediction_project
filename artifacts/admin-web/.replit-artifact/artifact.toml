@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "Football AI Admin Dashboard"
+version = "1.0.0"
+id = "artifacts/admin-web"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24276
+
+[services.development]
+run = "pnpm --filter @workspace/admin-web run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/admin-web", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/admin-web/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24276"
+BASE_PATH = "/"

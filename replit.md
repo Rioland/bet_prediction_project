@@ -1,45 +1,32 @@
-# [Project name]
+# Football AI Admin Dashboard
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A Football AI Prediction platform admin dashboard ported from Vercel/Next.js to Replit's pnpm workspace.
 
-## Run & Operate
+## Architecture
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- **Frontend** (`artifacts/admin-web/`): React + Vite SPA at `/`. Auth via Zustand + localStorage. Connects to the FastAPI backend via `VITE_API_URL`.
+- **API Server** (`artifacts/api-server/`): Express.js backend stub at `/api` (Replit-managed).
+- **Original Backend**: Python FastAPI service (`.migration-backup/backend/`) — configure `VITE_API_URL` to point to your deployed FastAPI instance.
 
-## Stack
+## Environment Variables
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- `VITE_API_URL` — URL of the deployed FastAPI backend (e.g. `https://your-backend.onrender.com`). Defaults to `http://localhost:8000` if not set.
 
-## Where things live
+## Routes
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+| Path | Page | Min Role |
+|------|------|----------|
+| `/login` | Login | — |
+| `/dashboard` | Stats overview | admin |
+| `/users` | User management | moderator |
+| `/analytics` | User + revenue analytics | admin |
+| `/subscriptions` | Subscription management | admin |
+| `/notifications` | Push notification sender | admin |
+| `/operations` | Sync / ML retrain triggers | admin |
+| `/reports` | Content reports moderation | moderator |
+| `/settings` | System settings | super_admin |
 
-## Architecture decisions
+## User Preferences
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
-
-## Product
-
-_Describe the high-level user-facing capabilities of this app once they exist._
-
-## User preferences
-
-_Populate as you build — explicit user instructions worth remembering across sessions._
-
-## Gotchas
-
-_Populate as you build — sharp edges, "always run X before Y" rules._
-
-## Pointers
-
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- Dark theme by default (matches original Next.js app)
+- Green primary accent (HSL 142.1 70.6% 45.3%)
