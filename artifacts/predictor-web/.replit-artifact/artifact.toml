@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/predictor-web/"
+title = "Football AI Predictor"
+version = "1.0.0"
+id = "artifacts/predictor-web"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/predictor-web/" ]
+localPort = 19929
+
+[services.development]
+run = "pnpm --filter @workspace/predictor-web run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/predictor-web", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/predictor-web/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19929"
+BASE_PATH = "/predictor-web/"

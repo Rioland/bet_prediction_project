@@ -3,20 +3,22 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Football AI Predictor API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: football
+    description: Football predictions and fixtures
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +26,100 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /football/leagues:
+    get:
+      operationId: getFootballLeagues
+      tags: [football]
+      summary: List available leagues
+      responses:
+        "200":
+          description: Leagues list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/League"
+
+  /football/matches/today:
+    get:
+      operationId: getFootballMatchesToday
+      tags: [football]
+      summary: Today's matches with embedded predictions
+      parameters:
+        - name: league_id
+          in: query
+          required: false
+          schema:
+            type: ["integer", "null"]
+      responses:
+        "200":
+          description: List of today's matches with predictions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MatchWithPrediction"
+
+  /football/predictions/today:
+    get:
+      operationId: getFootballPredictionsToday
+      tags: [football]
+      summary: All prediction cards for today
+      parameters:
+        - name: league_id
+          in: query
+          required: false
+          schema:
+            type: ["integer", "null"]
+      responses:
+        "200":
+          description: Prediction cards
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MatchWithPrediction"
+
+  /football/predictions/{fixture_id}:
+    get:
+      operationId: getFootballPredictionById
+      tags: [football]
+      summary: Prediction for a specific fixture
+      parameters:
+        - name: fixture_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Match prediction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatchWithPrediction"
+        "404":
+          description: Fixture not found
+
+  /football/live:
+    get:
+      operationId: getFootballLive
+      tags: [football]
+      summary: Currently live matches
+      responses:
+        "200":
+          description: Live matches
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MatchWithPrediction"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +130,93 @@ components:
       required:
         - status
 
+    League:
+      type: object
+      required: [id, name, country]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        country:
+          type: string
+        logo:
+          type: ["string", "null"]
+        season:
+          type: ["integer", "null"]
+
+    Prediction:
+      type: object
+      required:
+        - home_win_prob
+        - draw_prob
+        - away_win_prob
+        - btts_prob
+        - over_25_prob
+        - predicted_winner
+        - confidence
+        - home_xg
+        - away_xg
+        - predicted_score
+      properties:
+        home_win_prob:
+          type: number
+        draw_prob:
+          type: number
+        away_win_prob:
+          type: number
+        btts_prob:
+          type: number
+        over_25_prob:
+          type: number
+        predicted_winner:
+          type: string
+        confidence:
+          type: number
+        home_xg:
+          type: number
+        away_xg:
+          type: number
+        predicted_score:
+          type: string
+
+    MatchWithPrediction:
+      type: object
+      required:
+        - fixture_id
+        - league_id
+        - league_name
+        - home_team
+        - away_team
+        - kickoff
+        - status
+        - prediction
+      properties:
+        fixture_id:
+          type: integer
+        league_id:
+          type: integer
+        league_name:
+          type: string
+        league_logo:
+          type: ["string", "null"]
+        league_country:
+          type: ["string", "null"]
+        home_team:
+          type: string
+        home_logo:
+          type: ["string", "null"]
+        away_team:
+          type: string
+        away_logo:
+          type: ["string", "null"]
+        kickoff:
+          type: string
+        status:
+          type: string
+        home_score:
+          type: ["integer", "null"]
+        away_score:
+          type: ["integer", "null"]
+        prediction:
+          $ref: "#/components/schemas/Prediction"

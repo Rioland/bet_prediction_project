@@ -1,7 +1,9 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from "axios";
 
+// When VITE_API_URL is set to /api, all admin routes call through
+// the Express proxy which forwards them to the Python backend.
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL ?? "http://localhost:8000",
+  baseURL: import.meta.env.VITE_API_URL ?? "/api",
   withCredentials: true
 });
 
@@ -13,12 +15,6 @@ type QueueItem = {
 let isRefreshing = false;
 let failedQueue: QueueItem[] = [];
 
-function getCsrfToken(): string | null {
-  if (typeof document === "undefined") return null;
-  const match = document.cookie.match(/(?:^|;\s*)admin_csrf_token=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : null;
-}
-
 function processQueue(error: unknown) {
   failedQueue.forEach((item) => {
     if (error) item.reject(error);
@@ -27,14 +23,13 @@ function processQueue(error: unknown) {
   failedQueue = [];
 }
 
+// Attach stored Bearer token on every request. The Python backend authorizes
+// admin actions using this header ONLY (never cookies), which is inherently
+// CSRF-safe since a cross-origin page cannot set custom request headers.
 api.interceptors.request.use((config) => {
-  if (typeof window !== "undefined" && config.method) {
-    const method = config.method.toUpperCase();
-    const unsafe = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
-    if (unsafe) {
-      const csrf = getCsrfToken();
-      if (csrf) config.headers["x-csrf-token"] = csrf;
-    }
+  const token = localStorage.getItem("admin_access_token_hint");
+  if (token) {
+    config.headers["Authorization"] = `Bearer ${token}`;
   }
   return config;
 });
@@ -61,7 +56,10 @@ api.interceptors.response.use(
     isRefreshing = true;
 
     try {
-      await api.post("/admin/auth/refresh");
+      const { data } = await api.post("/admin/auth/refresh");
+      if (data?.access_token) {
+        localStorage.setItem("admin_access_token_hint", data.access_token);
+      }
       processQueue(null);
       return api(original);
     } catch (refreshError) {
