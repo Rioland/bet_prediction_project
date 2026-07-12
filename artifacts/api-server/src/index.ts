@@ -1,4 +1,5 @@
 import { spawn } from "child_process";
+import { existsSync } from "fs";
 import path from "path";
 import app from "./app";
 import { logger } from "./lib/logger";
@@ -37,8 +38,14 @@ function spawnPython() {
 
   logger.info({ apiDir }, "[python] Starting Python API");
 
+  // Use the venv interpreter so the prod container's broken sitecustomize
+  // is bypassed entirely — venv Python has its own clean sys.path.
+  const venvPython = path.join(apiDir, ".venv", "bin", "python3");
+  const pythonBin = existsSync(venvPython) ? venvPython : "python3";
+  logger.info({ pythonBin }, "[python] Using interpreter");
+
   const py = spawn(
-    "python3",
+    pythonBin,
     ["-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", String(PYTHON_PORT)],
     {
       cwd: apiDir,
