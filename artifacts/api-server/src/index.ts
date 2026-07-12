@@ -36,21 +36,28 @@ function spawnPython() {
   );
   const apiDir = path.join(projectRoot, "artifacts", "predictor-api");
 
-  logger.info({ apiDir }, "[python] Starting Python API");
+  // In production the Nix sitecustomize.py crashes before it can add
+  // .pythonlibs to sys.path, so packages installed via uv/pip are invisible
+  // to Python. Setting PYTHONPATH explicitly bypasses sitecustomize entirely.
+  const pythonLibs = path.join(projectRoot, ".pythonlibs", "lib", "python3.13", "site-packages");
+  // Also include venv site-packages as a fallback if the venv was built
+  const venvSitePackages = path.join(apiDir, ".venv", "lib", "python3.13", "site-packages");
+  const extraPaths = [pythonLibs, venvSitePackages]
+    .filter(existsSync)
+    .join(":");
+  const pythonPath = extraPaths
+    ? `${extraPaths}${process.env.PYTHONPATH ? ":" + process.env.PYTHONPATH : ""}`
+    : process.env.PYTHONPATH ?? "";
 
-  // Use the venv interpreter so the prod container's broken sitecustomize
-  // is bypassed entirely — venv Python has its own clean sys.path.
-  const venvPython = path.join(apiDir, ".venv", "bin", "python3");
-  const pythonBin = existsSync(venvPython) ? venvPython : "python3";
-  logger.info({ pythonBin }, "[python] Using interpreter");
+  logger.info({ apiDir, pythonPath }, "[python] Starting Python API");
 
   const py = spawn(
-    pythonBin,
+    "python3",
     ["-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", String(PYTHON_PORT)],
     {
       cwd: apiDir,
       stdio: "inherit",
-      env: { ...process.env },
+      env: { ...process.env, PYTHONPATH: pythonPath },
     },
   );
 
