@@ -48,3 +48,6 @@ packages = ["cargo", "libiconv", "rustc"]
 
 [userenv.shared]
 VITE_API_URL = "/api"
+
+[userenv.production]
+JWT_SECRET = "e8bae5e642e7ac14697e4b518d22fc5469a421d99de671a6b1508ac4b630fe33"
