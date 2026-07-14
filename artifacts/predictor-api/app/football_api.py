@@ -1,13 +1,14 @@
 """
 Football data layer — football-data.org v4 API.
 
-Falls back to realistic generated fixtures when the API key is absent
-or the API returns no matches (e.g. off-season / summer break).
+Fetches matches for today + the next 3 days across all available
+competitions. Falls back to realistic generated fixtures only when the
+API key is absent or every competition returns empty (deep off-season).
 """
 
 import random
 import time
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -18,12 +19,18 @@ from app.predictions import predict_from_strengths
 # ── League / competition metadata ────────────────────────────────────────────
 
 LEAGUES = [
-    {"id": 2021, "name": "Premier League",       "country": "England", "logo": "https://crests.football-data.org/PL.png",  "season": 2024},
-    {"id": 2014, "name": "La Liga",              "country": "Spain",   "logo": "https://crests.football-data.org/PD.png",  "season": 2024},
-    {"id": 2002, "name": "Bundesliga",           "country": "Germany", "logo": "https://crests.football-data.org/BL1.png", "season": 2024},
-    {"id": 2019, "name": "Serie A",              "country": "Italy",   "logo": "https://crests.football-data.org/SA.png",  "season": 2024},
-    {"id": 2015, "name": "Ligue 1",              "country": "France",  "logo": "https://crests.football-data.org/FL1.png", "season": 2024},
-    {"id": 2001, "name": "UEFA Champions League","country": "Europe",  "logo": "https://crests.football-data.org/CL.png",  "season": 2024},
+    {"id": 2000, "name": "FIFA World Cup",           "country": "World",   "logo": "https://crests.football-data.org/WC.png",  "season": 2026},
+    {"id": 2001, "name": "UEFA Champions League",    "country": "Europe",  "logo": "https://crests.football-data.org/CL.png",  "season": 2024},
+    {"id": 2021, "name": "Premier League",           "country": "England", "logo": "https://crests.football-data.org/PL.png",  "season": 2024},
+    {"id": 2014, "name": "La Liga",                  "country": "Spain",   "logo": "https://crests.football-data.org/PD.png",  "season": 2024},
+    {"id": 2002, "name": "Bundesliga",               "country": "Germany", "logo": "https://crests.football-data.org/BL1.png", "season": 2024},
+    {"id": 2019, "name": "Serie A",                  "country": "Italy",   "logo": "https://crests.football-data.org/SA.png",  "season": 2024},
+    {"id": 2015, "name": "Ligue 1",                  "country": "France",  "logo": "https://crests.football-data.org/FL1.png", "season": 2024},
+    {"id": 2013, "name": "Campeonato Brasileiro",    "country": "Brazil",  "logo": "https://crests.football-data.org/BSA.png", "season": 2026},
+    {"id": 2152, "name": "Copa Libertadores",        "country": "S. America","logo": "https://crests.football-data.org/CLI.png","season": 2026},
+    {"id": 2016, "name": "Championship",             "country": "England", "logo": "https://crests.football-data.org/ELC.png", "season": 2024},
+    {"id": 2003, "name": "Eredivisie",               "country": "Netherlands","logo": "https://crests.football-data.org/ED.png","season": 2024},
+    {"id": 2017, "name": "Primeira Liga",            "country": "Portugal","logo": "https://crests.football-data.org/PPL.png", "season": 2024},
 ]
 
 # Map competition ID → league entry for quick lookup
@@ -226,24 +233,56 @@ def get_leagues() -> list[dict]:
 
 
 def get_today_fixtures() -> list[dict]:
-    """Return today's fixtures enriched with Poisson predictions."""
+    """
+    Return real fixtures enriched with Poisson predictions.
+
+    Strategy:
+    1. Query the global /matches endpoint for today + next 3 days.
+    2. If that returns nothing, query each competition individually
+       (covers comps that only surface in per-competition endpoints).
+    3. Fall back to mock data only when truly nothing is available.
+    """
     today = date.today()
+    date_to = today + timedelta(days=3)
 
     fixtures: list[dict] = []
     if FOOTBALL_API_KEY:
         try:
-            with httpx.Client(timeout=15) as client:
+            with httpx.Client(timeout=20) as client:
+                # 1. Global matches endpoint (covers most competitions at once)
                 resp = client.get(
                     f"{FOOTBALL_API_BASE}/matches",
                     headers=_api_headers(),
-                    params={"dateFrom": today.isoformat(), "dateTo": today.isoformat()},
+                    params={
+                        "dateFrom": today.isoformat(),
+                        "dateTo":   date_to.isoformat(),
+                    },
                 )
                 resp.raise_for_status()
                 fixtures = _parse_fd_matches(resp.json())
+
+                # 2. If global returns nothing, poll each competition individually
+                if not fixtures:
+                    all_comp_fixtures: list[dict] = []
+                    for league in LEAGUES:
+                        try:
+                            r = client.get(
+                                f"{FOOTBALL_API_BASE}/competitions/{league['id']}/matches",
+                                headers=_api_headers(),
+                                params={
+                                    "dateFrom": today.isoformat(),
+                                    "dateTo":   date_to.isoformat(),
+                                },
+                            )
+                            if r.status_code == 200:
+                                all_comp_fixtures.extend(_parse_fd_matches(r.json()))
+                        except Exception:
+                            continue
+                    fixtures = all_comp_fixtures
         except Exception:
             fixtures = []
 
-    # Fall back to mock data when API is absent or returns nothing (off-season)
+    # Fall back to mock data only when the API gives nothing at all
     if not fixtures:
         fixtures = _mock_fixtures(today)
 
