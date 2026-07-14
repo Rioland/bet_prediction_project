@@ -1,11 +1,13 @@
 """
 Football data layer — football-data.org v4 API.
 
-Fetches matches for today + the next 3 days across all available
-competitions. Falls back to realistic generated fixtures only when the
-API key is absent or every competition returns empty (deep off-season).
+Fetches the next scheduled matches for every competition individually,
+respecting the free-tier rate limit (10 req/min) by spacing calls 7 s
+apart inside a background async loop.  The public API always returns
+cached data instantly; the background task keeps it fresh every 2 hours.
 """
 
+import asyncio
 import random
 import time
 from datetime import date, datetime, timedelta, timezone
@@ -235,61 +237,106 @@ def get_leagues() -> list[dict]:
     return LEAGUES
 
 
-def get_today_fixtures() -> list[dict]:
+async def _fetch_comp_async(
+    client: httpx.AsyncClient,
+    league_id: int,
+    today: date,
+    max_per_comp: int = 10,
+) -> list[dict]:
     """
-    Return real fixtures enriched with Poisson predictions.
-
-    Strategy:
-    1. Query the global /matches endpoint for today + next 3 days.
-    2. If that returns nothing, query each competition individually
-       (covers comps that only surface in per-competition endpoints).
-    3. Fall back to mock data only when truly nothing is available.
+    Fetch the next upcoming matches for one competition.
+    Tries a 14-day window first; if empty, fetches next SCHEDULED with no date cap.
     """
-    today = date.today()
-    date_to = today + timedelta(days=3)
-
-    fixtures: list[dict] = []
-    if FOOTBALL_API_KEY:
+    date_to = today + timedelta(days=14)
+    for params in [
+        {"dateFrom": today.isoformat(), "dateTo": date_to.isoformat()},
+        {"status": "SCHEDULED"},
+    ]:
         try:
-            with httpx.Client(timeout=20) as client:
-                # 1. Global matches endpoint (covers most competitions at once)
-                resp = client.get(
-                    f"{FOOTBALL_API_BASE}/matches",
-                    headers=_api_headers(),
-                    params={
-                        "dateFrom": today.isoformat(),
-                        "dateTo":   date_to.isoformat(),
-                    },
-                )
-                resp.raise_for_status()
-                fixtures = _parse_fd_matches(resp.json())
-
-                # 2. If global returns nothing, poll each competition individually
-                if not fixtures:
-                    all_comp_fixtures: list[dict] = []
-                    for league in LEAGUES:
-                        try:
-                            r = client.get(
-                                f"{FOOTBALL_API_BASE}/competitions/{league['id']}/matches",
-                                headers=_api_headers(),
-                                params={
-                                    "dateFrom": today.isoformat(),
-                                    "dateTo":   date_to.isoformat(),
-                                },
-                            )
-                            if r.status_code == 200:
-                                all_comp_fixtures.extend(_parse_fd_matches(r.json()))
-                        except Exception:
-                            continue
-                    fixtures = all_comp_fixtures
+            r = await client.get(
+                f"{FOOTBALL_API_BASE}/competitions/{league_id}/matches",
+                headers=_api_headers(),
+                params=params,
+            )
+            if r.status_code == 200:
+                parsed = _parse_fd_matches(r.json())
+                if parsed:
+                    return parsed[:max_per_comp]
+            elif r.status_code == 429:
+                # Rate limited — signal to caller via empty list (will retry next cycle)
+                break
         except Exception:
-            fixtures = []
+            pass
+    return []
 
-    # Fall back to mock data only when the API gives nothing at all
-    if not fixtures:
-        fixtures = _mock_fixtures(today)
 
-    return _enrich_with_predictions(fixtures)
+# ── Fixture cache (populated by background task) ──────────────────────────────
+
+_fixture_cache: list[dict] = []
+_fixture_cache_ts: float = 0.0
+_FIXTURE_REFRESH_INTERVAL = 7200   # full refresh every 2 hours
+_RATE_LIMIT_DELAY = 7.0            # 7 s between requests → ≤9 req/min (safe)
+
+
+async def refresh_fixtures_loop() -> None:
+    """
+    Background task: fetch next scheduled matches for every competition,
+    one at a time with a delay to respect the 10 req/min free-tier limit.
+    Runs once at startup then repeats every 2 hours.
+    """
+    global _fixture_cache, _fixture_cache_ts
+
+    while True:
+        today = date.today()
+        seen_ids: set = set()
+        collected: list[dict] = []
+
+        if FOOTBALL_API_KEY:
+            async with httpx.AsyncClient(timeout=20) as client:
+                for league in LEAGUES:
+                    fixtures = await _fetch_comp_async(client, league["id"], today)
+                    for fx in fixtures:
+                        fid = fx.get("fixture_id")
+                        if fid not in seen_ids:
+                            seen_ids.add(fid)
+                            collected.append(fx)
+                    # Respect rate limit between each competition request
+                    await asyncio.sleep(_RATE_LIMIT_DELAY)
+
+                # Grab any live matches (one extra request)
+                try:
+                    r = await client.get(
+                        f"{FOOTBALL_API_BASE}/matches",
+                        headers=_api_headers(),
+                        params={"status": "IN_PLAY,PAUSED"},
+                    )
+                    if r.status_code == 200:
+                        for fx in _parse_fd_matches(r.json()):
+                            fid = fx.get("fixture_id")
+                            if fid not in seen_ids:
+                                seen_ids.add(fid)
+                                collected.append(fx)
+                except Exception:
+                    pass
+
+        collected.sort(key=lambda f: f.get("kickoff", ""))
+
+        if not collected:
+            collected = _mock_fixtures(today)
+
+        _fixture_cache = _enrich_with_predictions(collected)
+        _fixture_cache_ts = time.monotonic()
+
+        # Sleep 2 hours before next full refresh
+        await asyncio.sleep(_FIXTURE_REFRESH_INTERVAL)
+
+
+def get_today_fixtures() -> list[dict]:
+    """Return cached upcoming fixtures (all leagues). Populated by background task."""
+    if _fixture_cache:
+        return _fixture_cache
+    # Background task hasn't completed yet — return mock so UI isn't empty
+    return _enrich_with_predictions(_mock_fixtures(date.today()))
 
 
 # ── Live matches (short-lived cache) ─────────────────────────────────────────

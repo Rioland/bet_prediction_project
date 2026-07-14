@@ -1,23 +1,23 @@
 """Public football prediction routes (no auth required)."""
 
+import time
 from fastapi import APIRouter, HTTPException, Query
 
 from app.football_api import get_leagues, get_today_fixtures, get_live_fixtures
 
 router = APIRouter(prefix="/football", tags=["football"])
 
-# Cache today's fixtures in memory so we don't re-call the API every request
-_cached_date: str | None = None
+# Cache upcoming fixtures — refresh every 2 hours so new matchdays appear promptly
+_FIXTURE_TTL = 7200  # 2 hours in seconds
 _cached_fixtures: list[dict] = []
+_cached_at: float = 0.0
 
 
 def _get_fixtures() -> list[dict]:
-    from datetime import date
-    global _cached_date, _cached_fixtures
-    today = date.today().isoformat()
-    if _cached_date != today:
+    global _cached_fixtures, _cached_at
+    if time.monotonic() - _cached_at > _FIXTURE_TTL:
         _cached_fixtures = get_today_fixtures()
-        _cached_date = today
+        _cached_at = time.monotonic()
     return _cached_fixtures
 
 
