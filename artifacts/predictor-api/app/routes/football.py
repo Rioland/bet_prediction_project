@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.football_api import get_leagues, get_today_fixtures
+from app.football_api import get_leagues, get_today_fixtures, get_live_fixtures
 
 router = APIRouter(prefix="/football", tags=["football"])
 
@@ -50,7 +50,5 @@ def prediction_by_id(fixture_id: int):
 
 @router.get("/live")
 def live_matches():
-    """Return any matches that are currently in-play (status=LIVE/1H/HT/2H/ET/P)."""
-    live_statuses = {"LIVE", "1H", "HT", "2H", "ET", "P", "BT"}
-    fixtures = _get_fixtures()
-    return [f for f in fixtures if f.get("status", "NS") in live_statuses]
+    """Return matches currently in-play, refreshed every 60 s via the live API."""
+    return get_live_fixtures()
