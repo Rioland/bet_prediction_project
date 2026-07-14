@@ -193,6 +193,10 @@ def get_today_fixtures() -> list[dict]:
                 )
                 resp.raise_for_status()
                 fixtures = _parse_api_fixtures(resp.json())
+                # If the real API returns nothing (e.g. summer break / off-season),
+                # fall back to realistic generated fixtures so the app always shows data.
+                if not fixtures:
+                    fixtures = _mock_fixtures(today)
         except Exception:
             fixtures = _mock_fixtures(today)
     else:
