@@ -15,6 +15,7 @@ import httpx
 
 from app.config import FOOTBALL_API_KEY, FOOTBALL_API_BASE
 from app.predictions import predict_from_strengths
+from app.team_ratings import get_team_strength
 
 # ── League / competition metadata ────────────────────────────────────────────
 
@@ -115,9 +116,6 @@ LIVE_STATUSES = {"1H", "HT", "ET", "P", "LIVE", "2H", "BT"}
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _strength_from_id(team_id: int | None, seed: str) -> tuple[float, float]:
-    rng = random.Random(f"{seed}:{team_id}")
-    return round(rng.uniform(0.85, 1.35), 3), round(rng.uniform(0.75, 1.15), 3)
 
 
 def _mock_fixtures(on_date: date) -> list[dict]:
@@ -145,6 +143,8 @@ def _mock_fixtures(on_date: date) -> list[dict]:
             ko_dt = datetime.strptime(
                 f"{on_date.isoformat()} {ko_time}", "%Y-%m-%d %H:%M"
             ).replace(tzinfo=timezone.utc)
+            h_att, h_def = get_team_strength(home["id"], home["name"])
+            a_att, a_def = get_team_strength(away["id"], away["name"])
             fixtures.append({
                 "fixture_id": fixture_id + m + lid,
                 "league_id": league["id"],
@@ -159,10 +159,10 @@ def _mock_fixtures(on_date: date) -> list[dict]:
                 "status": "NS",
                 "home_score": None,
                 "away_score": None,
-                "_home_attack": home["attack"],
-                "_home_defense": home["defense"],
-                "_away_attack": away["attack"],
-                "_away_defense": away["defense"],
+                "_home_attack": h_att,
+                "_home_defense": h_def,
+                "_away_attack": a_att,
+                "_away_defense": a_def,
             })
             slot_idx += 1
     return fixtures
@@ -184,8 +184,10 @@ def _parse_fd_matches(raw: dict) -> list[dict]:
         comp_id = comp.get("id", 0)
         league = _LEAGUE_MAP.get(comp_id, {})
 
-        home_attack, home_defense = _strength_from_id(home_t.get("id"), "home")
-        away_attack, away_defense = _strength_from_id(away_t.get("id"), "away")
+        home_name = home_t.get("name", home_t.get("shortName", ""))
+        away_name = away_t.get("name", away_t.get("shortName", ""))
+        home_attack, home_defense = get_team_strength(home_t.get("id"), home_name)
+        away_attack, away_defense = get_team_strength(away_t.get("id"), away_name)
 
         results.append({
             "fixture_id":     item.get("id"),
@@ -193,9 +195,9 @@ def _parse_fd_matches(raw: dict) -> list[dict]:
             "league_name":    comp.get("name", league.get("name", "")),
             "league_logo":    comp.get("emblem") or league.get("logo", ""),
             "league_country": comp.get("area", {}).get("name", league.get("country", "")),
-            "home_team":      home_t.get("name", home_t.get("shortName", "")),
+            "home_team":      home_name,
             "home_logo":      home_t.get("crest", ""),
-            "away_team":      away_t.get("name", away_t.get("shortName", "")),
+            "away_team":      away_name,
             "away_logo":      away_t.get("crest", ""),
             "kickoff":        item.get("utcDate", ""),
             "status":         status,
@@ -217,6 +219,7 @@ def _enrich_with_predictions(fixtures: list[dict]) -> list[dict]:
             home_defense=fx.pop("_home_defense", 1.0),
             away_attack=fx.pop("_away_attack", 1.0),
             away_defense=fx.pop("_away_defense", 1.0),
+            league_id=fx.get("league_id", 0),
         )
         enriched.append({**fx, "prediction": pred})
     return enriched
