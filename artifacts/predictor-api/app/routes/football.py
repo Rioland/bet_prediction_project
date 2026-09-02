@@ -1,24 +1,21 @@
 """Public football prediction routes (no auth required)."""
 
-import time
 from fastapi import APIRouter, HTTPException, Query
 
-from app.football_api import get_leagues, get_today_fixtures, get_live_fixtures
+from app.football_api import (
+    get_daily_pick,
+    get_daily_picks,
+    get_leagues,
+    get_live_fixtures,
+    get_today_fixtures,
+)
 
 router = APIRouter(prefix="/football", tags=["football"])
 
-# Cache upcoming fixtures — refresh every 2 hours so new matchdays appear promptly
-_FIXTURE_TTL = 7200  # 2 hours in seconds
-_cached_fixtures: list[dict] = []
-_cached_at: float = 0.0
-
-
 def _get_fixtures() -> list[dict]:
-    global _cached_fixtures, _cached_at
-    if time.monotonic() - _cached_at > _FIXTURE_TTL:
-        _cached_fixtures = get_today_fixtures()
-        _cached_at = time.monotonic()
-    return _cached_fixtures
+    # The data layer owns the refresh cache. Avoid a second route cache that
+    # could hide newly fetched matches for up to two extra hours.
+    return get_today_fixtures()
 
 
 @router.get("/leagues")
@@ -37,6 +34,16 @@ def matches_today(league_id: int | None = Query(None)):
 @router.get("/predictions/today")
 def predictions_today(league_id: int | None = Query(None)):
     return matches_today(league_id=league_id)
+
+
+@router.get("/pick/today")
+def daily_pick():
+    return get_daily_pick()
+
+
+@router.get("/picks/daily")
+def daily_picks():
+    return get_daily_picks()
 
 
 @router.get("/predictions/{fixture_id}")

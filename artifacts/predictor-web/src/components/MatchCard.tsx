@@ -37,7 +37,7 @@ export function MatchCard({ match }: { match: MatchWithPrediction }) {
             ) : (
               <span className="flex items-center gap-1 text-muted-foreground">
                 <Clock className="w-3 h-3" />
-                {format(new Date(match.kickoff), "HH:mm")}
+                {format(new Date(match.kickoff), "MMM d · HH:mm")}
               </span>
             )}
           </div>

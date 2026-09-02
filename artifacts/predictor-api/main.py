@@ -7,6 +7,7 @@ Admin default credentials:
   Password: Admin1234!
 """
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
 
@@ -18,6 +19,7 @@ from app.seed import seed_admin
 from app.routes.admin_auth import router as admin_auth_router
 from app.routes.admin import router as admin_router
 from app.routes.football import router as football_router
+from app.football_api import refresh_fixtures_loop
 
 
 @asynccontextmanager
@@ -29,7 +31,15 @@ async def lifespan(app: FastAPI):
         seed_admin(db)
     finally:
         db.close()
-    yield
+    refresh_task = asyncio.create_task(refresh_fixtures_loop())
+    try:
+        yield
+    finally:
+        refresh_task.cancel()
+        try:
+            await refresh_task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(

@@ -7,17 +7,53 @@ import {
   getGetFootballPredictionsTodayQueryKey,
   getGetFootballLiveQueryKey 
 } from "@workspace/api-client-react";
+import type { MatchWithPrediction } from "@workspace/api-client-react";
 import { Layout } from "@/components/Layout";
 import { MatchCard } from "@/components/MatchCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { useState } from "react";
-import { Activity, Calendar, Zap } from "lucide-react";
+import { Activity, ArrowRight, Calendar, ShieldCheck, Trophy, Zap } from "lucide-react";
 import { format } from "date-fns";
+
+type DailyPickResponse = {
+  pick_date: string;
+  is_today: boolean;
+  match: MatchWithPrediction | null;
+  reason: string;
+};
+
+type DailyPickEntry = {
+  pick_date: string;
+  match: MatchWithPrediction;
+  reason: string;
+};
 
 export default function Home() {
   const [leagueId, setLeagueId] = useState<string>("all");
+  const { data: dailyPick, isLoading: dailyPickLoading } = useQuery<DailyPickResponse>({
+    queryKey: ["/api/football/pick/today"],
+    queryFn: async () => {
+      const response = await fetch("/api/football/pick/today");
+      if (!response.ok) throw new Error("Unable to load daily pick");
+      return response.json();
+    },
+    staleTime: 1000 * 60 * 5,
+    refetchInterval: 1000 * 60 * 5,
+  });
+  const { data: dailyPicks } = useQuery<DailyPickEntry[]>({
+    queryKey: ["/api/football/picks/daily"],
+    queryFn: async () => {
+      const response = await fetch("/api/football/picks/daily");
+      if (!response.ok) throw new Error("Unable to load daily picks");
+      return response.json();
+    },
+    staleTime: 1000 * 60 * 5,
+    refetchInterval: 1000 * 60 * 5,
+  });
 
   const { data: leagues, isLoading: leaguesLoading } = useGetFootballLeagues({
     query: {
@@ -88,6 +124,86 @@ export default function Home() {
           </Select>
         </div>
       </div>
+
+      <section className="relative overflow-hidden rounded-xl border border-primary/30 bg-gradient-to-br from-primary/10 via-card/70 to-card/40 p-5 md:p-6 mb-8">
+        <div className="absolute -right-8 -top-10 h-36 w-36 rounded-full bg-primary/10 blur-3xl" />
+        <div className="relative flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-primary font-mono text-xs font-bold tracking-[0.2em] uppercase">
+              <ShieldCheck className="w-4 h-4" />
+              {dailyPick?.is_today ? "AI Pick of the Day" : "Next Available AI Pick"}
+            </div>
+            <p className="mt-2 text-muted-foreground font-mono text-xs">
+              {dailyPick ? format(new Date(`${dailyPick.pick_date}T12:00:00`), "EEEE, MMMM do") : "Finding the strongest available fixture..."}
+            </p>
+          </div>
+
+          {dailyPickLoading ? (
+            <Skeleton className="h-16 w-full md:w-80 bg-background/60" />
+          ) : dailyPick?.match ? (
+            <Link href={`/match/${dailyPick.match.fixture_id}`} className="group flex items-center gap-4 rounded-lg border border-border/50 bg-background/50 p-4 hover:border-primary/60 transition-colors md:min-w-[390px]">
+              <Trophy className="w-6 h-6 shrink-0 text-primary" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-mono truncate">
+                  {dailyPick.match.league_name}
+                </p>
+                <p className="font-bold truncate">
+                  {dailyPick.match.home_team} <span className="text-muted-foreground">vs</span> {dailyPick.match.away_team}
+                </p>
+                <p className="text-xs text-primary font-mono mt-1">
+                  Pick: {dailyPick.match.prediction.predicted_winner === "home" ? dailyPick.match.home_team : dailyPick.match.prediction.predicted_winner === "away" ? dailyPick.match.away_team : "Draw"}
+                  {" · "}Confidence {(dailyPick.match.prediction.confidence * 100).toFixed(0)}%
+                </p>
+              </div>
+              <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
+            </Link>
+          ) : (
+            <p className="rounded-lg border border-border/50 bg-background/50 p-4 text-sm text-muted-foreground font-mono">
+              No live fixture source is available right now.
+            </p>
+          )}
+        </div>
+      </section>
+
+      {dailyPicks && dailyPicks.length > 0 && (
+        <section className="mb-8">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h2 className="font-bold uppercase tracking-wider text-sm">One pick per day</h2>
+              <p className="text-xs text-muted-foreground font-mono mt-1">The strongest available model pick for each date</p>
+            </div>
+            <Zap className="w-4 h-4 text-primary" />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {dailyPicks.map((entry) => {
+              const prediction = entry.match.prediction;
+              const pickedTeam = prediction.predicted_winner === "home"
+                ? entry.match.home_team
+                : prediction.predicted_winner === "away"
+                  ? entry.match.away_team
+                  : "Draw";
+              return (
+                <Link
+                  key={entry.pick_date}
+                  href={`/match/${entry.match.fixture_id}`}
+                  className="group rounded-lg border border-border/50 bg-card/40 p-3 hover:border-primary/50 hover:bg-card/70 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-2 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                    <span>{format(new Date(`${entry.pick_date}T12:00:00`), "EEE, MMM d")}</span>
+                    <span className="text-primary">{(prediction.confidence * 100).toFixed(0)}%</span>
+                  </div>
+                  <p className="mt-2 text-xs font-semibold truncate">
+                    {entry.match.home_team} <span className="text-muted-foreground">vs</span> {entry.match.away_team}
+                  </p>
+                  <p className="mt-1 text-xs text-primary font-mono truncate group-hover:underline">
+                    Pick: {pickedTeam}
+                  </p>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       <Tabs defaultValue="predictions" className="w-full">
         <TabsList className="mb-6 w-full max-w-2xl grid grid-cols-3 bg-card/50 border border-border/50">

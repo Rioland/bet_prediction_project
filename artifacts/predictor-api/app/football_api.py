@@ -34,10 +34,34 @@ LEAGUES = [
     {"id": 2016, "name": "Championship",             "country": "England", "logo": "https://crests.football-data.org/ELC.png", "season": 2024},
     {"id": 2003, "name": "Eredivisie",               "country": "Netherlands","logo": "https://crests.football-data.org/ED.png","season": 2024},
     {"id": 2017, "name": "Primeira Liga",            "country": "Portugal","logo": "https://crests.football-data.org/PPL.png", "season": 2024},
+    {"id": 3001, "name": "Major League Soccer",      "country": "USA",     "logo": "", "season": 2026},
+    {"id": 3002, "name": "Liga MX",                  "country": "Mexico",  "logo": "", "season": 2026},
+    {"id": 3003, "name": "Liga Profesional",         "country": "Argentina","logo": "", "season": 2026},
+    {"id": 3004, "name": "Primera A",                "country": "Colombia", "logo": "", "season": 2026},
 ]
 
 # Map competition ID → league entry for quick lookup
 _LEAGUE_MAP = {l["id"]: l for l in LEAGUES}
+
+# ESPN's public scoreboard is a no-key fallback. It gives us current fixtures
+# when football-data.org is unavailable, rate-limited, or not configured.
+ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer"
+ESPN_COMPETITIONS = [
+    {"slug": "eng.1", "league_id": 2021},
+    {"slug": "esp.1", "league_id": 2014},
+    {"slug": "ger.1", "league_id": 2002},
+    {"slug": "ita.1", "league_id": 2019},
+    {"slug": "fra.1", "league_id": 2015},
+    {"slug": "ned.1", "league_id": 2003},
+    {"slug": "por.1", "league_id": 2017},
+    {"slug": "bra.1", "league_id": 2013},
+    {"slug": "mex.1", "league_id": 3002},
+    {"slug": "arg.1", "league_id": 3003},
+    {"slug": "col.1", "league_id": 3004},
+    {"slug": "usa.1", "league_id": 3001},
+    {"slug": "uefa.champions", "league_id": 2001},
+    {"slug": "conmebol.libertadores", "league_id": 2152},
+]
 
 # ── Mock team data (fallback) ────────────────────────────────────────────────
 
@@ -213,6 +237,133 @@ def _parse_fd_matches(raw: dict) -> list[dict]:
     return results
 
 
+def _parse_espn_events(raw: dict, source: dict) -> list[dict]:
+    """Convert ESPN scoreboard events into the shared fixture format."""
+    league = _LEAGUE_MAP.get(source["league_id"], {})
+    results: list[dict] = []
+
+    for event in raw.get("events", []):
+        competition = (event.get("competitions") or [{}])[0]
+        competitors = competition.get("competitors") or []
+        home = next((c for c in competitors if c.get("homeAway") == "home"), None)
+        away = next((c for c in competitors if c.get("homeAway") == "away"), None)
+        if not home or not away:
+            continue
+
+        home_team = home.get("team") or {}
+        away_team = away.get("team") or {}
+        home_name = home_team.get("displayName") or home_team.get("name", "")
+        away_name = away_team.get("displayName") or away_team.get("name", "")
+        home_id = home_team.get("id")
+        away_id = away_team.get("id")
+        try:
+            home_id = int(home_id) if home_id else None
+        except (TypeError, ValueError):
+            home_id = None
+        try:
+            away_id = int(away_id) if away_id else None
+        except (TypeError, ValueError):
+            away_id = None
+
+        status_type = (event.get("status") or {}).get("type") or {}
+        state = status_type.get("state", "pre")
+        if status_type.get("completed") or state == "post":
+            status = "FT"
+        elif state == "in":
+            status = "HT" if "halftime" in status_type.get("name", "").lower() else "1H"
+        else:
+            status = "NS"
+
+        def score(competitor: dict) -> int | None:
+            try:
+                return int(competitor.get("score")) if competitor.get("score") is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        event_id = event.get("id")
+        try:
+            fixture_id = 900_000_000 + int(event_id)
+        except (TypeError, ValueError):
+            fixture_id = abs(hash(f"{source['slug']}:{event_id}")) % 2_000_000_000
+
+        home_attack, home_defense = get_team_strength(home_id, home_name)
+        away_attack, away_defense = get_team_strength(away_id, away_name)
+        results.append({
+            "fixture_id": fixture_id,
+            "league_id": source["league_id"],
+            "league_name": league.get("name") or source.get("name", source["slug"]),
+            "league_logo": league.get("logo", ""),
+            "league_country": league.get("country") or source.get("country", ""),
+            "home_team": home_name,
+            "home_logo": home_team.get("logo", ""),
+            "away_team": away_name,
+            "away_logo": away_team.get("logo", ""),
+            "kickoff": event.get("date", ""),
+            "status": status,
+            "home_score": score(home),
+            "away_score": score(away),
+            "data_source": "espn",
+            "_home_attack": home_attack,
+            "_home_defense": home_defense,
+            "_away_attack": away_attack,
+            "_away_defense": away_defense,
+        })
+    return results
+
+
+def _fixture_key(fixture: dict) -> tuple:
+    """Stable cross-provider key used to avoid duplicate cards."""
+    return (
+        fixture.get("league_id"),
+        fixture.get("home_team", "").lower().strip(),
+        fixture.get("away_team", "").lower().strip(),
+        fixture.get("kickoff", "")[:10],
+    )
+
+
+async def _fetch_espn_fixtures(today: date, days: int = 7) -> list[dict]:
+    """Fetch current and upcoming matches from ESPN without an API key."""
+    start = today.strftime("%Y%m%d")
+    end = (today + timedelta(days=days)).strftime("%Y%m%d")
+    async with httpx.AsyncClient(timeout=15) as client:
+        async def fetch(source: dict) -> list[dict]:
+            try:
+                response = await client.get(
+                    f"{ESPN_BASE}/{source['slug']}/scoreboard",
+                    params={"dates": f"{start}-{end}", "limit": 100},
+                )
+                if response.status_code == 200:
+                    return _parse_espn_events(response.json(), source)
+            except Exception:
+                pass
+            return []
+
+        batches = await asyncio.gather(*(fetch(source) for source in ESPN_COMPETITIONS))
+    return [fixture for batch in batches for fixture in batch]
+
+
+def _fetch_espn_fixtures_sync(today: date, days: int = 7) -> list[dict]:
+    """Synchronous fallback for the first request before the refresh task finishes."""
+    start = today.strftime("%Y%m%d")
+    end = (today + timedelta(days=days)).strftime("%Y%m%d")
+    fixtures: list[dict] = []
+    try:
+        with httpx.Client(timeout=12) as client:
+            for source in ESPN_COMPETITIONS:
+                try:
+                    response = client.get(
+                        f"{ESPN_BASE}/{source['slug']}/scoreboard",
+                        params={"dates": f"{start}-{end}", "limit": 100},
+                    )
+                    if response.status_code == 200:
+                        fixtures.extend(_parse_espn_events(response.json(), source))
+                except Exception:
+                    continue
+    except Exception:
+        return []
+    return fixtures
+
+
 def _enrich_with_predictions(fixtures: list[dict]) -> list[dict]:
     enriched = []
     for fx in fixtures:
@@ -278,6 +429,10 @@ _FIXTURE_REFRESH_INTERVAL = 7200   # full refresh every 2 hours
 _RATE_LIMIT_DELAY = 7.0            # 7 s between requests → ≤9 req/min (safe)
 
 
+def _is_prediction_candidate(fixture: dict) -> bool:
+    return fixture.get("status", "NS") in {"NS", "1H", "2H", "HT", "ET", "P", "LIVE", "BT"}
+
+
 async def refresh_fixtures_loop() -> None:
     """
     Background task: fetch next scheduled matches for every competition,
@@ -294,10 +449,14 @@ async def refresh_fixtures_loop() -> None:
         if FOOTBALL_API_KEY:
             async with httpx.AsyncClient(timeout=20) as client:
                 for league in LEAGUES:
+                    # ESPN-only league IDs are not valid football-data.org
+                    # competition IDs, so skip them in this API pass.
+                    if league["id"] not in {2000, 2001, 2021, 2014, 2002, 2019, 2015, 2013, 2152, 2016, 2003, 2017}:
+                        continue
                     fixtures = await _fetch_comp_async(client, league["id"], today)
                     for fx in fixtures:
                         fid = fx.get("fixture_id")
-                        if fid not in seen_ids:
+                        if fid not in seen_ids and _is_prediction_candidate(fx):
                             seen_ids.add(fid)
                             collected.append(fx)
                     # Respect rate limit between each competition request
@@ -313,16 +472,25 @@ async def refresh_fixtures_loop() -> None:
                     if r.status_code == 200:
                         for fx in _parse_fd_matches(r.json()):
                             fid = fx.get("fixture_id")
-                            if fid not in seen_ids:
+                            if fid not in seen_ids and _is_prediction_candidate(fx):
                                 seen_ids.add(fid)
                                 collected.append(fx)
                 except Exception:
                     pass
 
-        collected.sort(key=lambda f: f.get("kickoff", ""))
+        # Always supplement football-data.org with ESPN. This fills leagues
+        # outside the free tier and covers temporary API/rate-limit failures.
+        try:
+            espn_fixtures = await _fetch_espn_fixtures(today, days=7)
+            existing_keys = {_fixture_key(fx) for fx in collected}
+            for fx in espn_fixtures:
+                if _is_prediction_candidate(fx) and _fixture_key(fx) not in existing_keys:
+                    existing_keys.add(_fixture_key(fx))
+                    collected.append(fx)
+        except Exception:
+            pass
 
-        if not collected:
-            collected = _mock_fixtures(today)
+        collected.sort(key=lambda f: f.get("kickoff", ""))
 
         _fixture_cache = _enrich_with_predictions(collected)
         _fixture_cache_ts = time.monotonic()
@@ -335,8 +503,56 @@ def get_today_fixtures() -> list[dict]:
     """Return cached upcoming fixtures (all leagues). Populated by background task."""
     if _fixture_cache:
         return _fixture_cache
-    # Background task hasn't completed yet — return mock so UI isn't empty
-    return _enrich_with_predictions(_mock_fixtures(date.today()))
+    # The background task may still be respecting the football-data.org rate
+    # limit. Use the no-key ESPN source immediately; never invent a fixture.
+    fixtures = [
+        fx for fx in _fetch_espn_fixtures_sync(date.today(), days=7)
+        if _is_prediction_candidate(fx)
+    ]
+    fixtures.sort(key=lambda f: f.get("kickoff", ""))
+    return _enrich_with_predictions(fixtures)
+
+
+def get_daily_picks(fixtures: list[dict] | None = None) -> list[dict]:
+    """Choose one strongest available pick for each calendar day."""
+    fixtures = fixtures if fixtures is not None else get_today_fixtures()
+    by_day: dict[str, dict] = {}
+    for fixture in fixtures:
+        if not _is_prediction_candidate(fixture):
+            continue
+        pick_date = fixture.get("kickoff", "")[:10]
+        if not pick_date:
+            continue
+        current = by_day.get(pick_date)
+        if current is None or fixture["prediction"]["confidence"] > current["prediction"]["confidence"]:
+            by_day[pick_date] = fixture
+
+    return [
+        {
+            "pick_date": pick_date,
+            "match": by_day[pick_date],
+            "reason": "Highest model confidence among available matches for this date.",
+        }
+        for pick_date in sorted(by_day)
+    ]
+
+
+def get_daily_pick(fixtures: list[dict] | None = None) -> dict:
+    """Return today's strongest pick, or the nearest upcoming pick if today is empty."""
+    picks = get_daily_picks(fixtures)
+    today = date.today().isoformat()
+    if not picks:
+        return {
+            "pick_date": today,
+            "is_today": True,
+            "match": None,
+            "reason": "No current fixture data is available from the connected live sources.",
+        }
+    selected = next((pick for pick in picks if pick["pick_date"] == today), picks[0])
+    return {
+        **selected,
+        "is_today": selected["pick_date"] == today,
+    }
 
 
 # ── Live matches (short-lived cache) ─────────────────────────────────────────
