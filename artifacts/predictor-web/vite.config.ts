@@ -12,6 +12,10 @@ const port = rawPort && !Number.isNaN(Number(rawPort)) && Number(rawPort) > 0
 
 const basePath = process.env.BASE_PATH ?? '/';
 
+// The generated API client calls /api/* (see lib/api-spec/openapi.yaml servers).
+// In dev, forward those to the Python backend instead of the Vite server.
+const apiTarget = process.env.API_URL ?? 'http://localhost:8000';
+
 export default defineConfig({
   base: basePath,
   plugins: [
@@ -54,6 +58,12 @@ export default defineConfig({
     strictPort: true,
     host: '0.0.0.0',
     allowedHosts: true,
+    proxy: {
+      '/api': {
+        target: apiTarget,
+        changeOrigin: true,
+      },
+    },
     fs: {
       strict: true,
     },
