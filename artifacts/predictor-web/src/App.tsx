@@ -4,6 +4,10 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import Home from '@/pages/Home';
 import MatchDetail from '@/pages/MatchDetail';
+import Results from '@/pages/Results';
+import Vip from '@/pages/Vip';
+import News from '@/pages/News';
+import NewsArticle from '@/pages/NewsArticle';
 import { Route, Switch, Router as WouterRouter } from 'wouter';
 
 const queryClient = new QueryClient({
@@ -20,6 +24,10 @@ function Router() {
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/match/:fixture_id" component={MatchDetail} />
+      <Route path="/results" component={Results} />
+      <Route path="/vip" component={Vip} />
+      <Route path="/news" component={News} />
+      <Route path="/news/:slug" component={NewsArticle} />
       <Route component={NotFound} />
     </Switch>
   );
