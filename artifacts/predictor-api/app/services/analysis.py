@@ -210,3 +210,55 @@ def analyse(db: Session, match: Match, features: dict[str, float], prediction: d
         },
         "head_to_head": head_to_head(db, match.home_team_id, match.away_team_id),
     }
+
+
+# The daily shortlist. Fewer than six rarely fills a card; beyond ten the
+# quality falls off fast, because the ranking is already exhausted.
+DAILY_TARGET = 7
+DAILY_MAXIMUM = 10
+
+
+def selection_score(pick: dict[str, Any]) -> tuple[float, float]:
+    """Rank key for the daily shortlist.
+
+    Selections with a measurable edge come first, ordered by that edge. Where
+    no price exists the edge is unknown rather than zero, so those fall back to
+    the model's own probability and rank below anything demonstrably priced
+    well.
+    """
+    edge = pick["value"] if pick["value"] >= MIN_MEANINGFUL_EDGE else 0.0
+    return (edge, pick["probability"])
+
+
+def select_daily(
+    analysed: list[dict[str, Any]], target: int = DAILY_TARGET, maximum: int = DAILY_MAXIMUM
+) -> list[dict[str, Any]]:
+    """Choose the day's shortlist, spread across competitions.
+
+    One fixture per league first, so a single busy division cannot take every
+    slot, then the strongest remaining until the target is met.
+    """
+    target = max(1, min(target, maximum))
+    ranked = sorted(
+        (a for a in analysed if a.get("recommendation")),
+        key=lambda a: selection_score(a["recommendation"]),
+        reverse=True,
+    )
+
+    chosen: list[dict[str, Any]] = []
+    seen_leagues: set[Any] = set()
+    for entry in ranked:
+        league = entry.get("league_name")
+        if league in seen_leagues:
+            continue
+        chosen.append(entry)
+        seen_leagues.add(league)
+        if len(chosen) == target:
+            return chosen
+
+    for entry in ranked:
+        if entry not in chosen:
+            chosen.append(entry)
+            if len(chosen) == target:
+                break
+    return chosen

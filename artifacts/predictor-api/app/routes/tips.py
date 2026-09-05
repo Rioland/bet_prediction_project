@@ -14,7 +14,7 @@ from app.ml.features import FEATURE_COLUMNS, features_for_upcoming
 from app.ml.dataset import load_finished_matches
 from app.models import Match, User
 from app.services import results as results_service
-from app.services.analysis import analyse
+from app.services.analysis import DAILY_MAXIMUM, DAILY_TARGET, analyse, select_daily
 from app.services.prediction_service import predict
 from app.services.tips import (
     MARKETS,
@@ -281,3 +281,99 @@ def fixture_analysis(fixture_id: int, db: DbSession) -> dict:
         )
 
     return analyse(db, match, features, _predict_from(features))
+
+
+@router.get("/fixtures")
+def all_fixtures(
+    db: DbSession,
+    on_date: date_type | None = Query(default=None, alias="date"),
+    league_id: int | None = Query(default=None),
+) -> dict:
+    """Every fixture on a date, analysable or not.
+
+    Fixtures the model cannot speak to are still listed, with the reason,
+    rather than silently dropped: an incomplete card looks like missing
+    fixtures, not like a model declining to guess.
+    """
+    matches = _matches_on(db, on_date, league_id)
+    feature_rows = _features_for(db, matches)
+
+    fixtures: list[dict] = []
+    analysable = 0
+    for match in matches:
+        features = feature_rows.get(match.id)
+        entry = {
+            "fixture_id": match.external_id or match.id,
+            "league_id": match.league_id,
+            "league_name": match.league.name if match.league else "Unknown",
+            "league_country": match.league.country if match.league else None,
+            "home_team": match.home_team.name if match.home_team else "Unknown",
+            "home_logo": match.home_team.logo_url if match.home_team else None,
+            "away_team": match.away_team.name if match.away_team else "Unknown",
+            "away_logo": match.away_team.logo_url if match.away_team else None,
+            "kickoff": match.kickoff_time.isoformat(),
+            "status": match.status,
+            "home_score": match.home_goals,
+            "away_score": match.away_goals,
+            "odds_home": match.odds_home,
+            "odds_draw": match.odds_draw,
+            "odds_away": match.odds_away,
+            "tip": None,
+            "analysis_available": False,
+            "unavailable_reason": None,
+        }
+
+        if features is None:
+            entry["unavailable_reason"] = "No feature data for this fixture."
+        elif not has_enough_history(features):
+            played = int(min(features["home_matches_played"], features["away_matches_played"]))
+            entry["unavailable_reason"] = (
+                f"Only {played} completed matches on record for one of these sides; "
+                f"{MIN_TEAM_HISTORY} are needed."
+            )
+        else:
+            candidates = filter_by_market(build_tips(_predict_from(features), entry), "popular")
+            entry["analysis_available"] = True
+            entry["tip"] = candidates[0].as_dict() if candidates else None
+            if not candidates:
+                entry["unavailable_reason"] = "No selection cleared the confidence floor."
+            analysable += 1
+
+        fixtures.append(entry)
+
+    return {
+        "date": (on_date or datetime.utcnow().date()).isoformat(),
+        "total": len(fixtures),
+        "analysable": analysable,
+        "fixtures": fixtures,
+    }
+
+
+@router.get("/daily-selection")
+def daily_selection(
+    db: DbSession,
+    on_date: date_type | None = Query(default=None, alias="date"),
+    limit: int = Query(default=DAILY_TARGET, ge=1, le=DAILY_MAXIMUM),
+) -> dict:
+    """The day's shortlist, each fixture fully analysed.
+
+    Every fixture on the card is analysed, then the strongest are kept, one per
+    competition first so a single busy league cannot take every slot.
+    """
+    matches = [m for m in _matches_on(db, on_date, None) if m.status not in FINISHED_STATUSES]
+    feature_rows = _features_for(db, matches)
+
+    analysed = [
+        analyse(db, match, features, _predict_from(features))
+        for match in matches
+        if (features := feature_rows.get(match.id)) is not None and has_enough_history(features)
+    ]
+    chosen = select_daily(analysed, target=limit)
+
+    return {
+        "date": (on_date or datetime.utcnow().date()).isoformat(),
+        "considered": len(matches),
+        "analysed": len(analysed),
+        "selected": len(chosen),
+        "matches": chosen,
+    }
