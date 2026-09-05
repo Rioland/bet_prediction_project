@@ -11,6 +11,9 @@ REFRESH_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
 
 DATABASE_URL = os.getenv("PREDICTOR_DATABASE_URL", "sqlite:///./football_ai.db")
 
+# Where trained model artifacts are written and read.
+MODEL_DIR = os.getenv("MODEL_DIR", "./models")
+
 FOOTBALL_API_KEY = os.getenv("FOOTBALL_API_KEY", "").strip()
 FOOTBALL_API_BASE = "https://api.football-data.org/v4"
 
