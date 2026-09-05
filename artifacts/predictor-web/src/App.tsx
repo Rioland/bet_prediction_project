@@ -3,7 +3,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import Home from '@/pages/Home';
-import MatchDetail from '@/pages/MatchDetail';
+import MatchAnalysis from '@/pages/MatchAnalysis';
 import Results from '@/pages/Results';
 import Vip from '@/pages/Vip';
 import News from '@/pages/News';
@@ -23,7 +23,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={Home} />
-      <Route path="/match/:fixture_id" component={MatchDetail} />
+      <Route path="/match/:fixture_id" component={MatchAnalysis} />
       <Route path="/results" component={Results} />
       <Route path="/vip" component={Vip} />
       <Route path="/news" component={News} />

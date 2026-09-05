@@ -138,6 +138,56 @@ export interface DailyPickResponse {
   reason?: string;
 }
 
+export interface RankedPick extends Tip {
+  band: "strong" | "solid" | "slight" | "weak";
+  note: string;
+  why: string;
+  basis?: "value" | "probability";
+  loses_more_often_than_not?: boolean;
+}
+
+export interface HeadToHead {
+  played: number;
+  home_wins: number;
+  draws: number;
+  away_wins: number;
+  avg_goals: number | null;
+  btts_rate: number | null;
+  fixtures: {
+    kickoff: string;
+    score: string;
+    at_home: boolean;
+    result_for_home_side: "home" | "draw" | "away";
+  }[];
+}
+
+export interface FormSummary {
+  points_per_game: number;
+  goals_scored_avg: number;
+  goals_conceded_avg: number;
+  matches_played: number;
+  rest_days: number;
+}
+
+export interface FixtureAnalysis {
+  fixture_id: number;
+  home_team: string;
+  away_team: string;
+  league_name: string | null;
+  kickoff: string;
+  /** Best pick among selections the model favours. */
+  recommendation: RankedPick | null;
+  /** Largest edge on the card, which may sit below the confidence floor. */
+  value_pick: RankedPick | null;
+  /** Markets a real bookmaker price existed for; edge is unmeasurable elsewhere. */
+  priced_markets: string[];
+  markets: Tip[];
+  expected_goals: { home: number; away: number; total: number };
+  goal_lines: { over_1_5: number; over_2_5: number; over_3_5: number };
+  form: { home: FormSummary; away: FormSummary };
+  head_to_head: HeadToHead;
+}
+
 export interface Performance {
   settled: number;
   won: number;
@@ -195,6 +245,8 @@ export const api = {
   recentResults: (limit = 20) =>
     get<SettledTip[]>(`/api/football/results/recent?limit=${limit}`),
   dailyPick: () => get<DailyPickResponse>("/api/football/pick/today"),
+  analysis: (fixtureId: number | string) =>
+    get<FixtureAnalysis>(`/api/football/analysis/${fixtureId}`),
   news: (limit = 10) => get<Article[]>(`/api/news?limit=${limit}`),
   article: (slug: string) => get<Article>(`/api/news/${slug}`),
 };
