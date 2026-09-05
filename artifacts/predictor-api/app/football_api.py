@@ -22,6 +22,11 @@ from app.team_ratings import get_team_strength
 
 logger = logging.getLogger(__name__)
 
+# How far back each refresh looks for completed results. Without this the
+# service only ever sees future fixtures, so no team ever accumulates the
+# history the model needs and every fixture stays unanalysable.
+_RESULT_LOOKBACK_DAYS = 5
+
 # ── League / competition metadata ────────────────────────────────────────────
 
 LEAGUES = [
@@ -324,9 +329,15 @@ def _fixture_key(fixture: dict) -> tuple:
     )
 
 
-async def _fetch_espn_fixtures(today: date, days: int = 7) -> list[dict]:
-    """Fetch current and upcoming matches from ESPN without an API key."""
-    start = today.strftime("%Y%m%d")
+async def _fetch_espn_fixtures(
+    today: date, days: int = 7, lookback: int = 0
+) -> list[dict]:
+    """Fetch matches from ESPN without an API key.
+
+    ``lookback`` extends the window backwards. Completed results are what the
+    learning pipeline trains on, and they only exist in the past.
+    """
+    start = (today - timedelta(days=lookback)).strftime("%Y%m%d")
     end = (today + timedelta(days=days)).strftime("%Y%m%d")
     async with httpx.AsyncClient(timeout=15) as client:
         async def fetch(source: dict) -> list[dict]:
@@ -483,13 +494,22 @@ async def refresh_fixtures_loop() -> None:
 
         # Always supplement football-data.org with ESPN. This fills leagues
         # outside the free tier and covers temporary API/rate-limit failures.
+        finished: list[dict] = []
         try:
-            espn_fixtures = await _fetch_espn_fixtures(today, days=7)
+            espn_fixtures = await _fetch_espn_fixtures(
+                today, days=7, lookback=_RESULT_LOOKBACK_DAYS
+            )
             existing_keys = {_fixture_key(fx) for fx in collected}
             for fx in espn_fixtures:
-                if _is_prediction_candidate(fx) and _fixture_key(fx) not in existing_keys:
-                    existing_keys.add(_fixture_key(fx))
+                if _fixture_key(fx) in existing_keys:
+                    continue
+                existing_keys.add(_fixture_key(fx))
+                if _is_prediction_candidate(fx):
                     collected.append(fx)
+                else:
+                    # Completed matches never belong in the prediction cache,
+                    # but they are exactly what the model learns from.
+                    finished.append(fx)
         except Exception:
             pass
 
@@ -497,7 +517,9 @@ async def refresh_fixtures_loop() -> None:
 
         _fixture_cache = _enrich_with_predictions(collected)
         _fixture_cache_ts = time.monotonic()
-        _persist_fixtures(_fixture_cache)
+        # Persist both: upcoming fixtures so tips can be published against them,
+        # and finished ones so team history actually accumulates.
+        _persist_fixtures(_fixture_cache + finished)
 
         # Sleep 2 hours before next full refresh
         await asyncio.sleep(_FIXTURE_REFRESH_INTERVAL)
