@@ -171,3 +171,14 @@ def test_daily_selection_rejects_a_limit_beyond_the_cap(client, trained_models) 
 def test_daily_selection_excludes_teams_without_history(client, card, trained_models) -> None:
     body = client.get("/football/daily-selection?limit=10").json()
     assert 6999 not in {m["fixture_id"] for m in body["matches"]}
+
+
+def test_unanalysable_analysis_reports_how_much_history_exists(client, card, trained_models) -> None:
+    """'Needs 5' alone does not say whether a fixture is close or hopeless."""
+    response = client.get("/football/analysis/6999")
+    assert response.status_code == 409
+
+    detail = response.json()["detail"]
+    assert "Newcomer A" in detail and "Newcomer B" in detail
+    assert "0 completed matches" in detail
+    assert "fills in over time" in detail

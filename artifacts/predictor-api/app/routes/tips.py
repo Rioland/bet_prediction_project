@@ -272,11 +272,16 @@ def fixture_analysis(fixture_id: int, db: DbSession) -> dict:
 
     features = _features_for(db, [match]).get(match.id)
     if features is None or not has_enough_history(features):
+        home_played = int(features["home_matches_played"]) if features else 0
+        away_played = int(features["away_matches_played"]) if features else 0
+        home = match.home_team.name if match.home_team else "the home side"
+        away = match.away_team.name if match.away_team else "the away side"
         raise HTTPException(
             status_code=409,
             detail=(
-                "Not enough completed matches for these teams to analyse. "
-                f"Both sides need at least {MIN_TEAM_HISTORY}."
+                f"{home} has {home_played} completed matches on record and {away} has "
+                f"{away_played}; {MIN_TEAM_HISTORY} each are needed. Results are "
+                "collected as fixtures are played, so this fills in over time."
             ),
         )
 

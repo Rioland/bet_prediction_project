@@ -53,17 +53,22 @@ to fall back to.
 ### After the first deploy
 
 The API serves fixtures and daily picks immediately, from the Dixon-Coles
-engine. The learned tips and the results tracker need history first:
+engine. The learned tips, the per-fixture analysis and the results tracker all
+need completed matches to work from, so backfill before training:
 
 ```bash
 # In the Render shell for the service
+python scripts/backfill_history.py --days 240
 python scripts/train_model.py
 ```
 
+Skip the backfill and every fixture reads "not enough history to analyse" until
+enough matches have been played *after* launch — weeks, not days. The refresh
+loop keeps history current afterwards; the backfill is what gives you a working
+model on day one.
+
 Until a model exists, `/football/tips` returns 503 with a message saying so, and
 the frontend shows "No model trained yet" rather than inventing predictions.
-Fixtures accumulate in the database automatically via the refresh loop, so the
-first useful training run is a few days after launch.
 
 ---
 
