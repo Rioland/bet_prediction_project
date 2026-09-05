@@ -1,0 +1,49 @@
+# Render Blueprint for the Football AI Predictor API.
+# Deploy: connect the repo at https://dashboard.render.com/blueprints
+#
+# The frontend is deployed separately to Vercel; see DEPLOY.md.
+
+services:
+  - type: web
+    name: predictor-api
+    runtime: docker
+    rootDir: artifacts/predictor-api
+    dockerfilePath: Dockerfile
+    healthCheckPath: /healthz
+    plan: starter
+    disk:
+      # Trained models are written by scripts/train_model.py and read at request
+      # time. Without a disk they vanish on every deploy and restart.
+      name: models
+      mountPath: /var/models
+      sizeGB: 1
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: predictor-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: MODEL_DIR
+        value: /var/models
+      - key: ENVIRONMENT
+        value: production
+      # Your Vercel domain. Comma-separated for multiple origins.
+      - key: CORS_ORIGINS
+        sync: false
+      # football-data.org key. Without it the API falls back to the keyless
+      # ESPN source, which still works but covers fewer competitions.
+      - key: FOOTBALL_API_KEY
+        sync: false
+      # Admin seeding is opt-in and has no default. Set both to create the
+      # first admin; leave unset and no admin account is created at all.
+      - key: DEFAULT_ADMIN_EMAIL
+        sync: false
+      - key: DEFAULT_ADMIN_PASSWORD
+        sync: false
+
+databases:
+  - name: predictor-db
+    databaseName: predictor
+    user: predictor
+    plan: basic-256mb

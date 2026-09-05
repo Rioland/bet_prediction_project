@@ -9,7 +9,18 @@ JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 REFRESH_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
 
-DATABASE_URL = os.getenv("PREDICTOR_DATABASE_URL", "sqlite:///./football_ai.db")
+def _normalise_database_url(url: str) -> str:
+    """Render and Heroku hand out postgres:// URLs, which SQLAlchemy 2 rejects."""
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+psycopg://", 1)
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+psycopg://", 1)
+    return url
+
+
+DATABASE_URL = _normalise_database_url(
+    os.getenv("PREDICTOR_DATABASE_URL") or os.getenv("DATABASE_URL") or "sqlite:///./football_ai.db"
+)
 
 # Where trained model artifacts are written and read.
 MODEL_DIR = os.getenv("MODEL_DIR", "./models")
