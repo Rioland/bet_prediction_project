@@ -114,8 +114,8 @@ def test_double_chance_is_still_available_on_its_own_tab() -> None:
     from app.services.tips import filter_by_market
 
     selections = {t.selection for t in filter_by_market(build_tips(PREDICTION, MATCH), "double_chance")}
-    # 1X is 0.85 and clears the floor; X2 is 0.38 and is correctly withheld.
-    assert selections == {"1X"}
+    # 1X (0.85) and 12 (0.77) clear the floor; X2 (0.38) is correctly withheld.
+    assert selections == {"1X", "12"}
 
 
 def test_mixed_views_prefer_a_priced_selection_with_edge() -> None:
@@ -145,3 +145,19 @@ def test_market_tabs_do_not_present_unlikely_outcomes_as_tips() -> None:
     likely = {**PREDICTION, "btts_prob": 0.72}
     btts = filter_by_market(build_tips(likely, MATCH), "btts")
     assert btts and all(t.probability >= MIN_PROBABILITY for t in btts)
+
+
+def test_unpriced_selections_claim_no_edge() -> None:
+    """Fair odds leave value at zero; floating point returns ~1e-16, not 0."""
+    from app.services.tips import MIN_MEANINGFUL_EDGE
+
+    unpriced = {**MATCH, "odds_home": None, "odds_draw": None, "odds_away": None}
+    for tip in build_tips(PREDICTION, unpriced):
+        assert tip.value < MIN_MEANINGFUL_EDGE, f"{tip.selection} claimed edge with no price"
+
+
+def test_win_either_half_beats_the_outright_win() -> None:
+    """Two chances to win one half must be likelier than winning the match."""
+    tips = {(t.market, t.selection): t for t in build_tips(PREDICTION, MATCH)}
+    assert tips[("either_half", "1WEH")].probability > tips[("home_win", "1")].probability
+    assert tips[("either_half", "2WEH")].probability > tips[("away_win", "2")].probability

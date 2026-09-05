@@ -17,16 +17,22 @@ that says anything about whether a bet is worth placing.
 from dataclasses import dataclass
 from typing import Any
 
-from app.ml.dixon_coles import over_line, score_matrix
+from app.ml.dixon_coles import over_line, score_matrix, win_either_half
 
 # A tip is only surfaced if the model is at least this sure.
 MIN_PROBABILITY = 0.55
 # VIP picks are the ones that also show positive expected value.
 VIP_MIN_VALUE = 0.04
 
+# Quoting fair odds where no market price exists leaves value at zero, but
+# floating point returns ~1e-16 rather than exactly 0. Anything under half a
+# percentage point is noise, not an edge worth claiming.
+MIN_MEANINGFUL_EDGE = 0.005
+
 MARKETS = [
     "popular", "banker", "2_odds", "home_win", "away_win", "draws",
-    "double_chance", "btts", "over_1_5", "over_2_5", "under_3_5", "acca",
+    "double_chance", "either_half", "btts", "over_1_5", "over_2_5",
+    "under_3_5", "acca",
 ]
 
 
@@ -100,6 +106,18 @@ def build_tips(prediction: dict[str, Any], match: dict[str, Any]) -> list[Tip]:
              f"{home} avoid defeat in {p_home + p_draw:.0%} of modelled outcomes."),
         _tip("double_chance", "X2", f"{away} or draw", p_away + p_draw, None,
              f"{away} avoid defeat in {p_away + p_draw:.0%} of modelled outcomes."),
+        _tip("double_chance", "12", "Either side to win", p_home + p_away, None,
+             f"A draw is priced at only {p_draw:.0%}, leaving {p_home + p_away:.0%} for a winner."),
+        _tip("either_half", "1WEH", f"{home} to win either half",
+             win_either_half(home_xg, away_xg, "home"), None,
+             f"{home} take at least one half in "
+             f"{win_either_half(home_xg, away_xg, 'home'):.0%} of modelled outcomes.",
+             source="derived"),
+        _tip("either_half", "2WEH", f"{away} to win either half",
+             win_either_half(home_xg, away_xg, "away"), None,
+             f"{away} take at least one half in "
+             f"{win_either_half(home_xg, away_xg, 'away'):.0%} of modelled outcomes.",
+             source="derived"),
         _tip("btts", "GG", "Both teams to score", prediction["btts_prob"], None,
              f"Both sides score in {prediction['btts_prob']:.0%} of modelled outcomes."),
         _tip("over_2_5", "Over 2.5", "Over 2.5 goals", prediction["over_25_prob"], None,
@@ -136,7 +154,7 @@ def filter_by_market(tips: list[Tip], market: str) -> list[Tip]:
         # Among selections the model actually favours, lead with the one that
         # most beats its market price. Ranking on value alone would surface
         # 25% longshots as headline tips just because the odds were generous.
-        priced = [t for t in mixed if t.value > 0]
+        priced = [t for t in mixed if t.value >= MIN_MEANINGFUL_EDGE]
         return sorted(priced or mixed, key=lambda t: (t.value, t.probability), reverse=True)
     # An explicit market tab still must not present a coin-flip as a call: a
     # 46% BTTS "tip" recommends an outcome the model rates as unlikely.

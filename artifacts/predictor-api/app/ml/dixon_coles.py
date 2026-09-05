@@ -101,6 +101,37 @@ def over_line(matrix: list[list[float]], line: float) -> float:
     )
 
 
+# Goals are not evenly spread across a match: roughly 45% arrive in the first
+# half and 55% in the second, consistently across major leagues. Splitting the
+# match rate this way is what makes half-based markets derivable at all.
+FIRST_HALF_SHARE = 0.45
+
+
+def half_rates(lam_home: float, lam_away: float) -> tuple[tuple[float, float], tuple[float, float]]:
+    """Split match expected goals into first- and second-half rates."""
+    first = (lam_home * FIRST_HALF_SHARE, lam_away * FIRST_HALF_SHARE)
+    second = (lam_home * (1 - FIRST_HALF_SHARE), lam_away * (1 - FIRST_HALF_SHARE))
+    return first, second
+
+
+def win_either_half(lam_home: float, lam_away: float, side: str = "home") -> float:
+    """P(the side wins at least one half, scored as two separate matches).
+
+    Halves are treated as independent given their rates. They are not strictly
+    independent - a team leading at the break often changes how it plays - so
+    this is an approximation, and is labelled derived wherever it surfaces.
+    """
+    (h1_home, h1_away), (h2_home, h2_away) = half_rates(lam_home, lam_away)
+
+    def win_probability(home_rate: float, away_rate: float) -> float:
+        result = outcomes(score_matrix(home_rate, away_rate))
+        return result["home_win"] if side == "home" else result["away_win"]
+
+    p_first = win_probability(h1_home, h1_away)
+    p_second = win_probability(h2_home, h2_away)
+    return 1 - (1 - p_first) * (1 - p_second)
+
+
 def expected_goals(features: dict[str, float]) -> tuple[float, float]:
     """Expected goals from learned rolling rates.
 
