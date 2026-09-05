@@ -59,9 +59,13 @@ export default defineConfig({
     host: '0.0.0.0',
     allowedHosts: true,
     proxy: {
+      // The Express api-server mounts its proxy router at /api and forwards
+      // /api/football/* to the Python API's /football/*. Strip the prefix here
+      // too, so dev and production hit identical backend paths.
       '/api': {
         target: apiTarget,
         changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
       },
     },
     fs: {

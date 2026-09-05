@@ -44,4 +44,10 @@ router.use(
   createProxyMiddleware({ ...proxyOpts, pathRewrite: (path) => `/football${path}` }),
 );
 
+// /api/news/* → http://localhost:5000/news/*
+router.use(
+  "/news",
+  createProxyMiddleware({ ...proxyOpts, pathRewrite: (path) => `/news${path}` }),
+);
+
 export default router;
