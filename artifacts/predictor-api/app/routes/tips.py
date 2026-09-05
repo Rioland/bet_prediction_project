@@ -29,6 +29,11 @@ FINISHED_STATUSES = {"FT", "AET", "PEN", "FINISHED"}
 VIP_ROLES = {"premium_user", "admin", "super_admin"}
 VIP_EDGE = 0.04
 
+# Below this, a team's rolling features are mostly neutral priors rather than
+# evidence. Predicting from them yields an identical, confident-looking tip for
+# every unknown fixture, which is worse than showing nothing.
+MIN_TEAM_HISTORY = 5
+
 DbSession = Annotated[Session, Depends(get_db)]
 
 
@@ -98,6 +103,11 @@ def _tip_cards(db: Session, matches: list[Match], market: str) -> list[dict]:
         if row is None:
             continue
         features = {c: float(row[c]) for c in FEATURE_COLUMNS}
+
+        # Newly ingested teams carry no history; skip rather than dress a prior
+        # up as a prediction.
+        if min(features["home_matches_played"], features["away_matches_played"]) < MIN_TEAM_HISTORY:
+            continue
 
         winner = predict("match_winner", features)
         btts = predict("btts", features)

@@ -138,3 +138,25 @@ def test_creating_news_requires_admin(client: TestClient, db_session: Session) -
 
     admin = _user(db_session, "admin@test.com", role="admin")
     assert client.post("/news", json=payload, headers=_bearer(admin)).status_code == 201
+
+
+def test_fixtures_with_no_team_history_are_not_tipped(
+    client: TestClient, db_session: Session, trained_models
+) -> None:
+    """Unknown teams get neutral priors, which would yield a confident-looking
+    identical tip for every such fixture."""
+    league = League(external_id=9999, name="New League", country="Nowhere")
+    db_session.add(league)
+    unknown = [Team(name="Unknown A"), Team(name="Unknown B")]
+    db_session.add_all(unknown)
+    db_session.flush()
+    db_session.add(Match(
+        external_id=7001, league_id=league.id, home_team_id=unknown[0].id,
+        away_team_id=unknown[1].id, status="NS", season=2025,
+        kickoff_time=datetime.utcnow().replace(hour=19, minute=0, second=0, microsecond=0),
+        odds_home=2.0, odds_draw=3.4, odds_away=3.6,
+    ))
+    db_session.commit()
+
+    fixture_ids = [c["fixture_id"] for c in client.get("/football/tips").json()["matches"]]
+    assert 7001 not in fixture_ids
