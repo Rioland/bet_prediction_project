@@ -5,6 +5,8 @@ import { cn } from "@/lib/utils";
 // Short labels keep all four items on screen at 375px without a cut-off.
 const NAV = [
   { href: "/", label: "Predictions", short: "Tips" },
+  { href: "/selection", label: "Top picks", short: "Picks" },
+  { href: "/fixtures", label: "Fixtures", short: "All" },
   { href: "/results", label: "Results", short: "Results" },
   { href: "/vip", label: "VIP", short: "VIP" },
   { href: "/news", label: "Analysis", short: "News" },

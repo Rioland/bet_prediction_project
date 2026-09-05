@@ -4,6 +4,8 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import Home from '@/pages/Home';
 import MatchAnalysis from '@/pages/MatchAnalysis';
+import DailySelection from '@/pages/DailySelection';
+import Fixtures from '@/pages/Fixtures';
 import Results from '@/pages/Results';
 import Vip from '@/pages/Vip';
 import News from '@/pages/News';
@@ -24,6 +26,8 @@ function Router() {
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/match/:fixture_id" component={MatchAnalysis} />
+      <Route path="/selection" component={DailySelection} />
+      <Route path="/fixtures" component={Fixtures} />
       <Route path="/results" component={Results} />
       <Route path="/vip" component={Vip} />
       <Route path="/news" component={News} />

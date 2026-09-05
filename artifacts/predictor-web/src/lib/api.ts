@@ -188,6 +188,44 @@ export interface FixtureAnalysis {
   head_to_head: HeadToHead;
 }
 
+/** Every fixture on a date, whether or not the model can speak to it. */
+export interface FixtureListing {
+  fixture_id: number;
+  league_id: number;
+  league_name: string;
+  league_country?: string | null;
+  home_team: string;
+  home_logo?: string | null;
+  away_team: string;
+  away_logo?: string | null;
+  kickoff: string;
+  status: string;
+  home_score: number | null;
+  away_score: number | null;
+  odds_home?: number | null;
+  odds_draw?: number | null;
+  odds_away?: number | null;
+  tip: Tip | null;
+  analysis_available: boolean;
+  /** Why there is no tip: too little history, or nothing cleared the floor. */
+  unavailable_reason: string | null;
+}
+
+export interface FixturesResponse {
+  date: string;
+  total: number;
+  analysable: number;
+  fixtures: FixtureListing[];
+}
+
+export interface DailySelectionResponse {
+  date: string;
+  considered: number;
+  analysed: number;
+  selected: number;
+  matches: FixtureAnalysis[];
+}
+
 export interface Performance {
   settled: number;
   won: number;
@@ -245,6 +283,18 @@ export const api = {
   recentResults: (limit = 20) =>
     get<SettledTip[]>(`/api/football/results/recent?limit=${limit}`),
   dailyPick: () => get<DailyPickResponse>("/api/football/pick/today"),
+  fixtures: (params: { date?: string; leagueId?: number } = {}) => {
+    const query = new URLSearchParams();
+    if (params.date) query.set("date", params.date);
+    if (params.leagueId) query.set("league_id", String(params.leagueId));
+    return get<FixturesResponse>(`/api/football/fixtures?${query}`);
+  },
+  dailySelection: (params: { date?: string; limit?: number } = {}) => {
+    const query = new URLSearchParams();
+    if (params.date) query.set("date", params.date);
+    if (params.limit) query.set("limit", String(params.limit));
+    return get<DailySelectionResponse>(`/api/football/daily-selection?${query}`);
+  },
   analysis: (fixtureId: number | string) =>
     get<FixtureAnalysis>(`/api/football/analysis/${fixtureId}`),
   news: (limit = 10) => get<Article[]>(`/api/news?limit=${limit}`),
