@@ -25,6 +25,15 @@ DATABASE_URL = _normalise_database_url(
 # Where trained model artifacts are written and read.
 MODEL_DIR = os.getenv("MODEL_DIR", "./models")
 
+# The background fixture refresh reaches the network and writes to the
+# database. Tests must be able to switch it off so they are deterministic and
+# do not depend on a live feed.
+FIXTURE_REFRESH_ENABLED = os.getenv("FIXTURE_REFRESH_ENABLED", "1").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+}
+
 FOOTBALL_API_KEY = os.getenv("FOOTBALL_API_KEY", "").strip()
 FOOTBALL_API_BASE = "https://api.football-data.org/v4"
 

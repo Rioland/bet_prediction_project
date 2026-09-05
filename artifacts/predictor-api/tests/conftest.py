@@ -2,6 +2,9 @@ import os
 
 os.environ.setdefault("PREDICTOR_DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("JWT_SECRET", "test-secret-for-pytest-only")
+# Otherwise the app lifespan fetches live fixtures and writes them into the
+# test database, making every count non-deterministic.
+os.environ["FIXTURE_REFRESH_ENABLED"] = "0"
 
 import pytest
 from sqlalchemy import create_engine

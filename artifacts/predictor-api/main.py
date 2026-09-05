@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import Base, SessionLocal, engine
-from app.config import CORS_ORIGINS
+from app.config import CORS_ORIGINS, FIXTURE_REFRESH_ENABLED
 from app.seed import seed_admin, seed_demo_users
 from app.routes.admin_auth import router as admin_auth_router
 from app.routes.admin import router as admin_router
@@ -34,15 +34,18 @@ async def lifespan(app: FastAPI):
         seed_demo_users(db)
     finally:
         db.close()
-    refresh_task = asyncio.create_task(refresh_fixtures_loop())
+    refresh_task = (
+        asyncio.create_task(refresh_fixtures_loop()) if FIXTURE_REFRESH_ENABLED else None
+    )
     try:
         yield
     finally:
-        refresh_task.cancel()
-        try:
-            await refresh_task
-        except asyncio.CancelledError:
-            pass
+        if refresh_task is not None:
+            refresh_task.cancel()
+            try:
+                await refresh_task
+            except asyncio.CancelledError:
+                pass
 
 
 app = FastAPI(
