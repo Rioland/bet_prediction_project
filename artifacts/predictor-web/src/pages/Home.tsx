@@ -22,13 +22,17 @@ import { format } from "date-fns";
 type DailyPickResponse = {
   pick_date: string;
   is_today: boolean;
+  pick_count: number;
+  picks: MatchWithPrediction[];
   match: MatchWithPrediction | null;
   reason: string;
 };
 
 type DailyPickEntry = {
   pick_date: string;
-  match: MatchWithPrediction;
+  pick_count: number;
+  picks: MatchWithPrediction[];
+  match?: MatchWithPrediction | null;
   reason: string;
 };
 
@@ -127,36 +131,44 @@ export default function Home() {
 
       <section className="relative overflow-hidden rounded-xl border border-primary/30 bg-gradient-to-br from-primary/10 via-card/70 to-card/40 p-5 md:p-6 mb-8">
         <div className="absolute -right-8 -top-10 h-36 w-36 rounded-full bg-primary/10 blur-3xl" />
-        <div className="relative flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-          <div>
+        <div className="relative">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
             <div className="flex items-center gap-2 text-primary font-mono text-xs font-bold tracking-[0.2em] uppercase">
               <ShieldCheck className="w-4 h-4" />
-              {dailyPick?.is_today ? "AI Pick of the Day" : "Next Available AI Pick"}
+              {dailyPick?.is_today ? "AI Picks of the Day" : "Next Available AI Picks"}
             </div>
-            <p className="mt-2 text-muted-foreground font-mono text-xs">
-              {dailyPick ? format(new Date(`${dailyPick.pick_date}T12:00:00`), "EEEE, MMMM do") : "Finding the strongest available fixture..."}
+            <p className="text-muted-foreground font-mono text-xs">
+              {dailyPick
+                ? `${format(new Date(`${dailyPick.pick_date}T12:00:00`), "EEEE, MMMM do")} · ${dailyPick.pick_count} picks`
+                : "Finding the strongest available fixtures..."}
             </p>
           </div>
 
           {dailyPickLoading ? (
-            <Skeleton className="h-16 w-full md:w-80 bg-background/60" />
-          ) : dailyPick?.match ? (
-            <Link href={`/match/${dailyPick.match.fixture_id}`} className="group flex items-center gap-4 rounded-lg border border-border/50 bg-background/50 p-4 hover:border-primary/60 transition-colors md:min-w-[390px]">
-              <Trophy className="w-6 h-6 shrink-0 text-primary" />
-              <div className="min-w-0 flex-1">
-                <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-mono truncate">
-                  {dailyPick.match.league_name}
-                </p>
-                <p className="font-bold truncate">
-                  {dailyPick.match.home_team} <span className="text-muted-foreground">vs</span> {dailyPick.match.away_team}
-                </p>
-                <p className="text-xs text-primary font-mono mt-1">
-                  Pick: {dailyPick.match.prediction.predicted_winner === "home" ? dailyPick.match.home_team : dailyPick.match.prediction.predicted_winner === "away" ? dailyPick.match.away_team : "Draw"}
-                  {" · "}Confidence {(dailyPick.match.prediction.confidence * 100).toFixed(0)}%
-                </p>
-              </div>
-              <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
-            </Link>
+            <Skeleton className="h-24 w-full bg-background/60" />
+          ) : dailyPick?.picks?.length ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
+              {dailyPick.picks.map((pick, index) => {
+                const pickedTeam = pick.prediction.predicted_winner === "home"
+                  ? pick.home_team
+                  : pick.prediction.predicted_winner === "away"
+                    ? pick.away_team
+                    : "Draw";
+                return (
+                  <Link key={pick.fixture_id} href={`/match/${pick.fixture_id}`} className="group flex items-center gap-3 rounded-lg border border-border/50 bg-background/50 p-3 hover:border-primary/60 transition-colors">
+                    {index === 0 ? <Trophy className="w-5 h-5 shrink-0 text-primary" /> : <Zap className="w-4 h-4 shrink-0 text-primary/70" />}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[9px] uppercase tracking-widest text-muted-foreground font-mono truncate">{pick.league_name}</p>
+                      <p className="text-xs font-bold truncate">{pick.home_team} <span className="text-muted-foreground">vs</span> {pick.away_team}</p>
+                      <p className="text-[10px] text-primary font-mono mt-1 truncate">
+                        {pickedTeam} · {(pick.prediction.confidence * 100).toFixed(0)}%
+                      </p>
+                    </div>
+                    <ArrowRight className="w-3 h-3 shrink-0 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
+                  </Link>
+                );
+              })}
+            </div>
           ) : (
             <p className="rounded-lg border border-border/50 bg-background/50 p-4 text-sm text-muted-foreground font-mono">
               No live fixture source is available right now.
@@ -169,36 +181,43 @@ export default function Home() {
         <section className="mb-8">
           <div className="flex items-center justify-between mb-3">
             <div>
-              <h2 className="font-bold uppercase tracking-wider text-sm">One pick per day</h2>
-              <p className="text-xs text-muted-foreground font-mono mt-1">The strongest available model pick for each date</p>
+              <h2 className="font-bold uppercase tracking-wider text-sm">6–7 picks per day</h2>
+              <p className="text-xs text-muted-foreground font-mono mt-1">High-confidence picks diversified across available leagues</p>
             </div>
             <Zap className="w-4 h-4 text-primary" />
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="space-y-4">
             {dailyPicks.map((entry) => {
-              const prediction = entry.match.prediction;
-              const pickedTeam = prediction.predicted_winner === "home"
-                ? entry.match.home_team
-                : prediction.predicted_winner === "away"
-                  ? entry.match.away_team
-                  : "Draw";
+              const picks = entry.picks?.length
+                ? entry.picks
+                : entry.match
+                  ? [entry.match]
+                  : [];
               return (
-                <Link
-                  key={entry.pick_date}
-                  href={`/match/${entry.match.fixture_id}`}
-                  className="group rounded-lg border border-border/50 bg-card/40 p-3 hover:border-primary/50 hover:bg-card/70 transition-colors"
-                >
-                  <div className="flex items-center justify-between gap-2 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
-                    <span>{format(new Date(`${entry.pick_date}T12:00:00`), "EEE, MMM d")}</span>
-                    <span className="text-primary">{(prediction.confidence * 100).toFixed(0)}%</span>
+                <div key={entry.pick_date} className="rounded-lg border border-border/50 bg-card/30 p-3">
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                      {format(new Date(`${entry.pick_date}T12:00:00`), "EEE, MMM d")}
+                    </span>
+                    <span className="text-[10px] text-primary font-mono">{entry.pick_count} picks</span>
                   </div>
-                  <p className="mt-2 text-xs font-semibold truncate">
-                    {entry.match.home_team} <span className="text-muted-foreground">vs</span> {entry.match.away_team}
-                  </p>
-                  <p className="mt-1 text-xs text-primary font-mono truncate group-hover:underline">
-                    Pick: {pickedTeam}
-                  </p>
-                </Link>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-2">
+                    {picks.map((pick) => {
+                      const pickedTeam = pick.prediction.predicted_winner === "home"
+                        ? pick.home_team
+                        : pick.prediction.predicted_winner === "away"
+                          ? pick.away_team
+                          : "Draw";
+                      return (
+                        <Link key={pick.fixture_id} href={`/match/${pick.fixture_id}`} className="group rounded-md border border-border/40 bg-background/30 p-2 hover:border-primary/50 transition-colors">
+                          <p className="text-[9px] uppercase tracking-wider text-muted-foreground font-mono truncate">{pick.league_name}</p>
+                          <p className="mt-1 text-[11px] font-semibold truncate">{pick.home_team} <span className="text-muted-foreground">vs</span> {pick.away_team}</p>
+                          <p className="mt-1 text-[10px] text-primary font-mono truncate group-hover:underline">{pickedTeam} · {(pick.prediction.confidence * 100).toFixed(0)}%</p>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
               );
             })}
           </div>

@@ -513,38 +513,81 @@ def get_today_fixtures() -> list[dict]:
     return _enrich_with_predictions(fixtures)
 
 
+DAILY_PICK_TARGET = 7
+DAILY_PICK_MINIMUM = 6
+
+
+def _select_daily_matches(fixtures: list[dict]) -> list[dict]:
+    """Choose up to seven high-confidence, league-diverse matches for one day."""
+    ranked = sorted(
+        fixtures,
+        key=lambda fixture: (
+            -fixture["prediction"]["confidence"],
+            fixture.get("kickoff", ""),
+        ),
+    )
+    selected: list[dict] = []
+    selected_leagues: set[int] = set()
+
+    # Prefer different competitions first so the daily card is not dominated
+    # by one league with many fixtures.
+    for fixture in ranked:
+        league_id = fixture.get("league_id")
+        if league_id in selected_leagues:
+            continue
+        selected.append(fixture)
+        selected_leagues.add(league_id)
+        if len(selected) == DAILY_PICK_TARGET:
+            return selected
+
+    # If there are fewer than seven leagues represented, fill from the
+    # remaining confidence-ranked fixtures.
+    for fixture in ranked:
+        if fixture not in selected:
+            selected.append(fixture)
+            if len(selected) == DAILY_PICK_TARGET:
+                break
+
+    return selected
+
+
 def get_daily_picks(fixtures: list[dict] | None = None) -> list[dict]:
-    """Choose one strongest available pick for each calendar day."""
+    """Choose six or seven strongest available picks for each calendar day."""
     fixtures = fixtures if fixtures is not None else get_today_fixtures()
-    by_day: dict[str, dict] = {}
+    by_day: dict[str, list[dict]] = {}
     for fixture in fixtures:
         if not _is_prediction_candidate(fixture):
             continue
         pick_date = fixture.get("kickoff", "")[:10]
         if not pick_date:
             continue
-        current = by_day.get(pick_date)
-        if current is None or fixture["prediction"]["confidence"] > current["prediction"]["confidence"]:
-            by_day[pick_date] = fixture
+        by_day.setdefault(pick_date, []).append(fixture)
 
     return [
         {
             "pick_date": pick_date,
-            "match": by_day[pick_date],
-            "reason": "Highest model confidence among available matches for this date.",
+            "pick_count": len(_select_daily_matches(by_day[pick_date])),
+            "picks": _select_daily_matches(by_day[pick_date]),
+            "reason": (
+                f"Top {DAILY_PICK_TARGET} model picks across available leagues."
+                if len(by_day[pick_date]) >= DAILY_PICK_MINIMUM
+                else f"{len(by_day[pick_date])} picks available from live fixture data."
+            ),
         }
         for pick_date in sorted(by_day)
     ]
 
 
 def get_daily_pick(fixtures: list[dict] | None = None) -> dict:
-    """Return today's strongest pick, or the nearest upcoming pick if today is empty."""
+    """Return today's daily picks, or the nearest upcoming set if today is empty."""
     picks = get_daily_picks(fixtures)
     today = date.today().isoformat()
     if not picks:
         return {
             "pick_date": today,
             "is_today": True,
+            "pick_count": 0,
+            "picks": [],
             "match": None,
             "reason": "No current fixture data is available from the connected live sources.",
         }
@@ -552,6 +595,8 @@ def get_daily_pick(fixtures: list[dict] | None = None) -> dict:
     return {
         **selected,
         "is_today": selected["pick_date"] == today,
+        # Keep the original primary match field for existing clients.
+        "match": selected["picks"][0] if selected["picks"] else None,
     }
 
 
