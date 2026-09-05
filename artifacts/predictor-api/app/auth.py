@@ -1,9 +1,12 @@
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
-from jose import JWTError, jwt
+import jwt
 
 from app.config import JWT_SECRET, JWT_ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_MINUTES
+
+# Re-export PyJWT's base error so callers can do: from app.auth import JWTError
+JWTError = jwt.PyJWTError
 
 
 def hash_password(plain: str) -> str:
@@ -34,5 +37,5 @@ def create_refresh_token(user_id: int) -> str:
 
 
 def decode_token(token: str) -> dict:
-    """Decode and validate a JWT. Raises JWTError on failure."""
+    """Decode and validate a JWT. Raises jwt.PyJWTError on failure."""
     return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])

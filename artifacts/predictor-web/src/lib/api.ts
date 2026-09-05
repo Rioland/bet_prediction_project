@@ -112,6 +112,32 @@ export interface TipsResponse {
   accumulator?: Accumulator;
 }
 
+/** A prediction card as served by the daily-pick endpoints. */
+export interface DailyPick {
+  fixture_id: number;
+  league_id: number;
+  league_name: string;
+  home_team: string;
+  away_team: string;
+  kickoff: string;
+  prediction: {
+    predicted_winner: "home" | "draw" | "away";
+    /** 0-1, like every other probability in this API. */
+    confidence: number;
+    home_win_prob: number;
+    draw_prob: number;
+    away_win_prob: number;
+  };
+}
+
+export interface DailyPickResponse {
+  pick_date: string;
+  is_today: boolean;
+  pick_count: number;
+  picks: DailyPick[];
+  reason?: string;
+}
+
 export interface Performance {
   settled: number;
   won: number;
@@ -168,6 +194,7 @@ export const api = {
     ),
   recentResults: (limit = 20) =>
     get<SettledTip[]>(`/api/football/results/recent?limit=${limit}`),
+  dailyPick: () => get<DailyPickResponse>("/api/football/pick/today"),
   news: (limit = 10) => get<Article[]>(`/api/news?limit=${limit}`),
   article: (slug: string) => get<Article>(`/api/news/${slug}`),
 };

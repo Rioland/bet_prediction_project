@@ -1,12 +1,12 @@
 """
-Football AI Predictor — Python FastAPI backend
+Football AI Predictor - Python FastAPI backend
 Port: 5000  (proxied through Express api-server at /api)
 
-Admin default credentials:
-  Email:    admin@footballai.com
-  Password: Admin1234!
+Admin seeding is opt-in: set DEFAULT_ADMIN_EMAIL and DEFAULT_ADMIN_PASSWORD.
+There is deliberately no default admin credential.
 """
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
 
@@ -14,10 +14,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import Base, SessionLocal, engine
-from app.seed import seed_admin
+from app.config import CORS_ORIGINS
+from app.seed import seed_admin, seed_demo_users
 from app.routes.admin_auth import router as admin_auth_router
 from app.routes.admin import router as admin_router
 from app.routes.football import router as football_router
+from app.football_api import refresh_fixtures_loop
 
 
 @asynccontextmanager
@@ -27,9 +29,18 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         seed_admin(db)
+        seed_demo_users(db)
     finally:
         db.close()
-    yield
+    refresh_task = asyncio.create_task(refresh_fixtures_loop())
+    try:
+        yield
+    finally:
+        refresh_task.cancel()
+        try:
+            await refresh_task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(
@@ -40,7 +51,9 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    # A wildcard origin cannot be combined with credentials; browsers reject it,
+    # and it would expose authenticated endpoints to any site if they did not.
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

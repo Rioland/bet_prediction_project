@@ -2,23 +2,20 @@
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.football_api import get_leagues, get_today_fixtures
+from app.football_api import (
+    get_daily_pick,
+    get_daily_picks,
+    get_leagues,
+    get_live_fixtures,
+    get_today_fixtures,
+)
 
 router = APIRouter(prefix="/football", tags=["football"])
 
-# Cache today's fixtures in memory so we don't re-call the API every request
-_cached_date: str | None = None
-_cached_fixtures: list[dict] = []
-
-
 def _get_fixtures() -> list[dict]:
-    from datetime import date
-    global _cached_date, _cached_fixtures
-    today = date.today().isoformat()
-    if _cached_date != today:
-        _cached_fixtures = get_today_fixtures()
-        _cached_date = today
-    return _cached_fixtures
+    # The data layer owns the refresh cache. Avoid a second route cache that
+    # could hide newly fetched matches for up to two extra hours.
+    return get_today_fixtures()
 
 
 @router.get("/leagues")
@@ -39,6 +36,16 @@ def predictions_today(league_id: int | None = Query(None)):
     return matches_today(league_id=league_id)
 
 
+@router.get("/pick/today")
+def daily_pick():
+    return get_daily_pick()
+
+
+@router.get("/picks/daily")
+def daily_picks():
+    return get_daily_picks()
+
+
 @router.get("/predictions/{fixture_id}")
 def prediction_by_id(fixture_id: int):
     fixtures = _get_fixtures()
@@ -50,7 +57,5 @@ def prediction_by_id(fixture_id: int):
 
 @router.get("/live")
 def live_matches():
-    """Return any matches that are currently in-play (status=LIVE/1H/HT/2H/ET/P)."""
-    live_statuses = {"LIVE", "1H", "HT", "2H", "ET", "P", "BT"}
-    fixtures = _get_fixtures()
-    return [f for f in fixtures if f.get("status", "NS") in live_statuses]
+    """Return matches currently in-play, refreshed every 60 s via the live API."""
+    return get_live_fixtures()

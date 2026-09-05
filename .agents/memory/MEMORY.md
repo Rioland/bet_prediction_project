@@ -1,2 +1,3 @@
 - [Football AI Admin port](football-ai-admin-port.md) — Next.js→Vite port details: wouter routing, Zustand auth with isHydrated guard, ROUTE_MIN_ROLES must list every protected path.
 - [Express proxy + Python backend](express-proxy-python-backend.md) — body-parser vs proxy ordering, Bearer-only auth to avoid CSRF, bcrypt vs passlib on Python 3.13.
+- [Python production startup](python-prod-startup.md) — sitecustomize fails in prod; set PYTHONPATH=.pythonlibs/... explicitly in Node spawn; python-jose blocked (use PyJWT); set -e in build must not wrap pip.

@@ -47,3 +47,8 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Local databases - never commit; they carry seeded accounts and password hashes
+*.db
+*.sqlite
+*.sqlite3

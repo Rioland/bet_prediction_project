@@ -12,7 +12,7 @@ refresh flow only; cookies are NEVER accepted for authorizing admin actions.
 from datetime import datetime
 
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Response, status
-from jose import JWTError
+from app.auth import JWTError
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 

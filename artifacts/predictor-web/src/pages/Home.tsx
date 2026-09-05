@@ -8,6 +8,7 @@ import { MarketTabs } from "@/components/MarketTabs";
 import { TipCard } from "@/components/TipCard";
 import { AccumulatorCard } from "@/components/AccumulatorCard";
 import { VipLockCard } from "@/components/VipLockCard";
+import { DailyPickHero } from "@/components/DailyPickHero";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card } from "@/components/ui/card";
 import { api, ApiError, MARKET_LABELS, type Market } from "@/lib/api";
@@ -51,6 +52,8 @@ export default function Home() {
           .
         </p>
       </section>
+
+      <DailyPickHero />
 
       <div className="mb-4">
         <DateStrip selected={date} onSelect={setDate} />
