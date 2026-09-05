@@ -19,6 +19,8 @@ from app.seed import seed_admin, seed_demo_users
 from app.routes.admin_auth import router as admin_auth_router
 from app.routes.admin import router as admin_router
 from app.routes.football import router as football_router
+from app.routes.tips import router as tips_router
+from app.routes.news import router as news_router
 from app.football_api import refresh_fixtures_loop
 
 
@@ -62,6 +64,8 @@ app.add_middleware(
 app.include_router(admin_auth_router)
 app.include_router(admin_router)
 app.include_router(football_router)
+app.include_router(tips_router)
+app.include_router(news_router)
 
 
 @app.get("/healthz")

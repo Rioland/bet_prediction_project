@@ -8,6 +8,7 @@ cached data instantly; the background task keeps it fresh every 2 hours.
 """
 
 import asyncio
+import logging
 import random
 import time
 from datetime import date, datetime, timedelta, timezone
@@ -18,6 +19,8 @@ import httpx
 from app.config import FOOTBALL_API_KEY, FOOTBALL_API_BASE
 from app.predictions import predict_from_strengths
 from app.team_ratings import get_team_strength
+
+logger = logging.getLogger(__name__)
 
 # ── League / competition metadata ────────────────────────────────────────────
 
@@ -494,9 +497,32 @@ async def refresh_fixtures_loop() -> None:
 
         _fixture_cache = _enrich_with_predictions(collected)
         _fixture_cache_ts = time.monotonic()
+        _persist_fixtures(_fixture_cache)
 
         # Sleep 2 hours before next full refresh
         await asyncio.sleep(_FIXTURE_REFRESH_INTERVAL)
+
+
+def _persist_fixtures(fixtures: list[dict]) -> None:
+    """Mirror the cache into the database the learning pipeline reads.
+
+    Best-effort: a persistence failure must not take down the live prediction
+    path, which serves from the in-memory cache regardless.
+    """
+    if not fixtures:
+        return
+    from app.database import SessionLocal
+    from app.services.feed_sync import sync_fixtures
+
+    db = SessionLocal()
+    try:
+        synced = sync_fixtures(db, fixtures)
+        logger.info("Persisted %d fixtures for training", synced)
+    except Exception:
+        logger.exception("Could not persist fixtures; live predictions unaffected")
+        db.rollback()
+    finally:
+        db.close()
 
 
 def get_today_fixtures() -> list[dict]:
