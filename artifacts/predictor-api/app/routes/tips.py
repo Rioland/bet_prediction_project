@@ -14,6 +14,7 @@ from app.ml.features import FEATURE_COLUMNS, features_for_upcoming
 from app.ml.dataset import load_finished_matches
 from app.models import Match, User
 from app.services import results as results_service
+from app.services.analysis import analyse
 from app.services.prediction_service import predict
 from app.services.tips import (
     MARKETS,
@@ -77,9 +78,10 @@ def _matches_on(db: Session, on_date: date_type | None, league_id: int | None) -
     return list(db.scalars(stmt.order_by(Match.kickoff_time)))
 
 
-def _tip_cards(db: Session, matches: list[Match], market: str) -> list[dict]:
+def _features_for(db: Session, matches: list[Match]) -> dict[int, dict[str, float]]:
+    """Leak-free feature rows for the given fixtures, keyed by match id."""
     if not matches:
-        return []
+        return {}
 
     history = load_finished_matches(db)
     upcoming = [
@@ -94,37 +96,48 @@ def _tip_cards(db: Session, matches: list[Match], market: str) -> list[dict]:
     ]
     frame = features_for_upcoming(history, upcoming)
     if frame.empty:
-        return []
+        return {}
 
-    rows = {row["match_id"]: row for _, row in frame.iterrows()}
+    return {
+        int(row["match_id"]): {c: float(row[c]) for c in FEATURE_COLUMNS}
+        for _, row in frame.iterrows()
+    }
+
+
+def _predict_from(features: dict[str, float]) -> dict[str, float]:
+    """Calibrated model output plus the expected goals the derived markets need."""
+    winner = predict("match_winner", features)
+    btts = predict("btts", features)
+    totals = predict("over_under_2_5", features)
+    probs = winner["probabilities"]
+    home_xg = (features["home_goals_scored_avg"] + features["away_goals_conceded_avg"]) / 2 * 1.08
+    away_xg = (features["away_goals_scored_avg"] + features["home_goals_conceded_avg"]) / 2 * 0.94
+    return {
+        "home_win_prob": probs.get("H", 0.0),
+        "draw_prob": probs.get("D", 0.0),
+        "away_win_prob": probs.get("A", 0.0),
+        "btts_prob": btts["probabilities"].get("yes", 0.0),
+        "over_25_prob": totals["probabilities"].get("over", 0.0),
+        "home_xg": round(home_xg, 2),
+        "away_xg": round(away_xg, 2),
+    }
+
+
+def has_enough_history(features: dict[str, float]) -> bool:
+    return min(features["home_matches_played"], features["away_matches_played"]) >= MIN_TEAM_HISTORY
+
+
+def _tip_cards(db: Session, matches: list[Match], market: str) -> list[dict]:
+    feature_rows = _features_for(db, matches)
     cards: list[dict] = []
     for match in matches:
-        row = rows.get(match.id)
-        if row is None:
-            continue
-        features = {c: float(row[c]) for c in FEATURE_COLUMNS}
-
+        features = feature_rows.get(match.id)
         # Newly ingested teams carry no history; skip rather than dress a prior
         # up as a prediction.
-        if min(features["home_matches_played"], features["away_matches_played"]) < MIN_TEAM_HISTORY:
+        if features is None or not has_enough_history(features):
             continue
 
-        winner = predict("match_winner", features)
-        btts = predict("btts", features)
-        totals = predict("over_under_2_5", features)
-        probs = winner["probabilities"]
-        home_xg = (features["home_goals_scored_avg"] + features["away_goals_conceded_avg"]) / 2 * 1.08
-        away_xg = (features["away_goals_scored_avg"] + features["home_goals_conceded_avg"]) / 2 * 0.94
-
-        prediction = {
-            "home_win_prob": probs.get("H", 0.0),
-            "draw_prob": probs.get("D", 0.0),
-            "away_win_prob": probs.get("A", 0.0),
-            "btts_prob": btts["probabilities"].get("yes", 0.0),
-            "over_25_prob": totals["probabilities"].get("over", 0.0),
-            "home_xg": round(home_xg, 2),
-            "away_xg": round(away_xg, 2),
-        }
+        prediction = _predict_from(features)
         card = {
             "fixture_id": match.external_id or match.id,
             "league_id": match.league_id,
@@ -241,3 +254,30 @@ def recent_results(db: DbSession, limit: int = Query(default=20, ge=1, le=100)) 
         }
         for t in results_service.recent_settled(db, limit=limit)
     ]
+
+
+@router.get("/analysis/{fixture_id}")
+def fixture_analysis(fixture_id: int, db: DbSession) -> dict:
+    """Every market for one fixture, the evidence behind it, and a recommendation.
+
+    The recommendation is the selection whose probability most exceeds its
+    market price, not the highest probability outright: a 90% double chance at
+    1.05 is a reliable way to lose money slowly.
+    """
+    match = db.scalar(select(Match).where(Match.external_id == fixture_id)) or db.get(
+        Match, fixture_id
+    )
+    if match is None:
+        raise HTTPException(status_code=404, detail="Fixture not found")
+
+    features = _features_for(db, [match]).get(match.id)
+    if features is None or not has_enough_history(features):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Not enough completed matches for these teams to analyse. "
+                f"Both sides need at least {MIN_TEAM_HISTORY}."
+            ),
+        )
+
+    return analyse(db, match, features, _predict_from(features))
