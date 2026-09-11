@@ -16,13 +16,18 @@ from fastapi import HTTPException
 from app.config import MODEL_DIR
 
 
-@lru_cache(maxsize=8)
-def _load(target: str) -> dict[str, Any]:
-    model_path = Path(MODEL_DIR) / f"{target}.joblib"
+@lru_cache(maxsize=16)
+def _load(target: str, sport: str = "football") -> dict[str, Any]:
+    from app.ml.train import model_filename
+
+    model_path = Path(MODEL_DIR) / model_filename(sport, target)
     if not model_path.exists():
         raise HTTPException(
             status_code=503,
-            detail=f"Model '{target}' is not trained yet. Run scripts/train_model.py.",
+            detail=(
+                f"No trained '{target}' model for {sport}. "
+                f"Run: python scripts/train_model.py --sport {sport}"
+            ),
         )
     return joblib.load(model_path)
 
@@ -31,8 +36,10 @@ def clear_model_cache() -> None:
     _load.cache_clear()
 
 
-def predict(target: str, match_features: dict[str, float]) -> dict[str, Any]:
-    bundle = _load(target)
+def predict(
+    target: str, match_features: dict[str, float], sport: str = "football"
+) -> dict[str, Any]:
+    bundle = _load(target, sport)
     model, features, classes = bundle["model"], bundle["features"], bundle["classes"]
 
     missing = [f for f in features if f not in match_features]
