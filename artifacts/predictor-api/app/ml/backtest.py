@@ -30,9 +30,14 @@ def _fresh_model():
 
 
 def walk_forward(
-    df: pd.DataFrame, target: str = "match_winner", folds: int = 5, min_train: int = 500
+    df: pd.DataFrame,
+    target: str = "match_winner",
+    folds: int = 5,
+    min_train: int = 500,
+    feature_columns: list[str] | None = None,
 ) -> dict[str, Any]:
     """Retrain across expanding time windows and score each future block."""
+    features = feature_columns or FEATURE_COLUMNS
     ordered = df.sort_values("kickoff_time").reset_index(drop=True)
     if len(ordered) < min_train + folds:
         raise ValueError(f"Need more than {min_train + folds} rows to walk forward; have {len(ordered)}")
@@ -49,9 +54,9 @@ def walk_forward(
             continue
 
         model = _fresh_model()
-        model.fit(train[FEATURE_COLUMNS], train[target])
-        proba = model.predict_proba(test[FEATURE_COLUMNS])
-        predicted = model.predict(test[FEATURE_COLUMNS])
+        model.fit(train[features], train[target])
+        proba = model.predict_proba(test[features])
+        predicted = model.predict(test[features])
 
         results.append({
             "fold": fold + 1,

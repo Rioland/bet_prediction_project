@@ -13,23 +13,33 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.database import SessionLocal  # noqa: E402
-from app.ml.pipeline import build_training_frame, retrain  # noqa: E402
+from app.ml.dataset import load_finished_matches  # noqa: E402
+from app.ml.train import train_for_sport  # noqa: E402
+from app.services.prediction_service import clear_model_cache  # noqa: E402
+from app.sports.registry import available_sports, get_adapter  # noqa: E402
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--leagues", help="comma-separated internal league ids")
+    parser.add_argument(
+        "--sport", default="football", choices=available_sports(), help="sport to train"
+    )
     args = parser.parse_args()
-    league_ids = [int(x) for x in args.leagues.split(",")] if args.leagues else None
+    adapter = get_adapter(args.sport)
 
     db = SessionLocal()
     try:
-        frame = build_training_frame(db, league_ids)
-        print(f"built {len(frame)} labelled rows")
+        rows = [
+            m for m in load_finished_matches(db)
+            if m.get("sport", "football") == adapter.name
+        ]
+        frame = adapter.build_dataset(rows)
+        print(f"built {len(frame)} labelled {adapter.name} rows")
         if frame.empty:
-            print("Nothing to train on. Run scripts/ingest_history.py first.")
+            print("Nothing to train on. Backfill history first.")
             return 1
-        summary = retrain(db, league_ids)
+        summary = train_for_sport(adapter, frame)
+        clear_model_cache()
     finally:
         db.close()
 
