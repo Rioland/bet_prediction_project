@@ -17,6 +17,8 @@ from typing import Any, Iterable
 
 import pandas as pd
 
+from app.ml.implied import implied_or_default, implied_probabilities
+
 # How many recent fixtures feed a team's rolling form.
 FORM_WINDOW = 10
 # Prior meetings considered for head-to-head.
@@ -25,6 +27,11 @@ H2H_WINDOW = 10
 # silently filled with zeros that the model would read as "very bad team".
 DEFAULT_GOALS = 1.3
 DEFAULT_PPG = 1.35
+
+# Long-run 1X2 base rates across major leagues, used when a fixture carries no
+# odds. A neutral prior is safer than zeros, which would read as "the market
+# rules this out".
+BASE_RATE_1X2 = (0.46, 0.26, 0.28)
 
 FEATURE_COLUMNS = [
     "home_ppg",
@@ -50,6 +57,13 @@ FEATURE_COLUMNS = [
     "away_rest_days",
     "home_matches_played",
     "away_matches_played",
+    # Market view. Closing odds are known before kickoff, so these are
+    # leak-free, and they carry information no rolling average does: injuries,
+    # lineups, suspensions and money.
+    "market_home_prob",
+    "market_draw_prob",
+    "market_away_prob",
+    "market_available",
 ]
 
 TARGETS = ["match_winner", "over_under_2_5", "btts"]
@@ -122,6 +136,9 @@ def build_feature_row(
     season = match.get("season") or 0
     h2h_home, h2h_draw, h2h_away = _h2h_counts(h2h, match["home_team_id"])
 
+    prices = (match.get("odds_home"), match.get("odds_draw"), match.get("odds_away"))
+    market = implied_or_default(prices, BASE_RATE_1X2)
+
     return {
         "home_ppg": _ppg(home.results),
         "away_ppg": _ppg(away.results),
@@ -146,6 +163,12 @@ def build_feature_row(
         "away_rest_days": _rest_days(away, kickoff),
         "home_matches_played": float(home.played),
         "away_matches_played": float(away.played),
+        "market_home_prob": market[0],
+        "market_draw_prob": market[1],
+        "market_away_prob": market[2],
+        # Lets the model separate "the market is quiet" from "the market agrees
+        # with the base rate", which the probabilities alone cannot express.
+        "market_available": 1.0 if implied_probabilities(prices) is not None else 0.0,
     }
 
 
