@@ -17,3 +17,6 @@ joblib>=1.4.0
 
 # Postgres driver for hosted deployments; SQLite is used locally.
 psycopg[binary]>=3.2.0
+# Optional booster. Needs an OpenMP runtime (libgomp), which the Dockerfile
+# installs; training degrades to the sklearn candidates without it.
+xgboost>=2.1.0

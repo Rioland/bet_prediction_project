@@ -13,6 +13,7 @@ Two things here differ from a textbook sklearn script, and both matter:
 """
 
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,24 @@ from sklearn.preprocessing import StandardScaler
 from app.config import MODEL_DIR
 from app.ml.features import FEATURE_COLUMNS, TARGETS
 
+logger = logging.getLogger(__name__)
+
+# XGBoost needs an OpenMP runtime (libgomp / libomp). The Docker image installs
+# it; a local machine may not have it, and a missing booster should degrade the
+# candidate list rather than break training entirely. The training report names
+# which model actually won, so its absence is visible rather than silent.
+try:
+    import xgboost  # noqa: F401
+
+    from app.ml.xgb import StringLabelXGB
+
+    XGBOOST_AVAILABLE = True
+    _XGBOOST_ERROR = ""
+except Exception as exc:  # ImportError, or XGBoostError when libomp is missing
+    StringLabelXGB = None  # type: ignore[assignment]
+    XGBOOST_AVAILABLE = False
+    _XGBOOST_ERROR = str(exc).strip().splitlines()[0] if str(exc).strip() else type(exc).__name__
+
 # Fraction of the timeline held out, most recent matches last.
 TEST_FRACTION = 0.2
 MIN_ROWS = 500
@@ -43,7 +62,7 @@ def temporal_split(df: pd.DataFrame, test_fraction: float = TEST_FRACTION):
 
 
 def _candidates() -> dict[str, Any]:
-    return {
+    candidates: dict[str, Any] = {
         "logistic": Pipeline(
             [("scale", StandardScaler()), ("clf", LogisticRegression(max_iter=2000, C=0.5))]
         ),
@@ -54,6 +73,14 @@ def _candidates() -> dict[str, Any]:
             max_depth=5, learning_rate=0.05, max_iter=300, l2_regularization=1.0, random_state=42
         ),
     }
+
+    if XGBOOST_AVAILABLE:
+        candidates["xgboost"] = StringLabelXGB()
+    else:
+        logger.warning(
+            "XGBoost unavailable (%s); training on the remaining candidates.", _XGBOOST_ERROR
+        )
+    return candidates
 
 
 def _baseline_log_loss(y_train: pd.Series, y_test: pd.Series, labels: list[str]) -> float:
@@ -76,10 +103,17 @@ def _multiclass_brier(y_true: pd.Series, proba: np.ndarray, labels: list[str]) -
     return float(np.mean(np.sum((proba - onehot) ** 2, axis=1)))
 
 
-def train_target(df: pd.DataFrame, target: str, model_dir: Path) -> dict[str, Any]:
+def train_target(
+    df: pd.DataFrame,
+    target: str,
+    model_dir: Path,
+    feature_columns: list[str] | None = None,
+    sport: str = "football",
+) -> dict[str, Any]:
+    features = feature_columns or FEATURE_COLUMNS
     train_df, test_df = temporal_split(df)
-    X_train, y_train = train_df[FEATURE_COLUMNS], train_df[target]
-    X_test, y_test = test_df[FEATURE_COLUMNS], test_df[target]
+    X_train, y_train = train_df[features], train_df[target]
+    X_test, y_test = test_df[features], test_df[target]
     labels = sorted(df[target].unique())
 
     best: dict[str, Any] | None = None
@@ -102,12 +136,18 @@ def train_target(df: pd.DataFrame, target: str, model_dir: Path) -> dict[str, An
     baseline = _baseline_log_loss(y_train, y_test, labels)
     model_dir.mkdir(parents=True, exist_ok=True)
     joblib.dump(
-        {"model": best["model"], "features": FEATURE_COLUMNS, "classes": list(best["model"].classes_)},
-        model_dir / f"{target}.joblib",
+        {
+            "model": best["model"],
+            "features": features,
+            "classes": list(best["model"].classes_),
+            "sport": sport,
+        },
+        model_dir / model_filename(sport, target),
     )
 
     return {
         "target": target,
+        "sport": sport,
         "model": best["name"],
         "train_rows": len(train_df),
         "test_rows": len(test_df),
@@ -119,15 +159,53 @@ def train_target(df: pd.DataFrame, target: str, model_dir: Path) -> dict[str, An
     }
 
 
-def train_models(df: pd.DataFrame, targets: list[str] | None = None) -> dict[str, Any]:
+def model_filename(sport: str, target: str) -> str:
+    """Artifacts are namespaced by sport so two sports cannot overwrite each other.
+
+    Football keeps its original unprefixed names so existing trained models and
+    deployments keep working.
+    """
+    return f"{target}.joblib" if sport == "football" else f"{sport}_{target}.joblib"
+
+
+def report_filename(sport: str) -> str:
+    return "training_report.json" if sport == "football" else f"{sport}_training_report.json"
+
+
+def train_models(
+    df: pd.DataFrame,
+    targets: list[str] | None = None,
+    feature_columns: list[str] | None = None,
+    sport: str = "football",
+) -> dict[str, Any]:
     if len(df) < MIN_ROWS:
         raise ValueError(
             f"Only {len(df)} labelled matches available; need at least {MIN_ROWS} "
             "for a temporal split to mean anything. Ingest more history first."
         )
     model_dir = Path(MODEL_DIR)
-    reports = [train_target(df, target, model_dir) for target in (targets or TARGETS)]
+    reports = [
+        train_target(df, target, model_dir, feature_columns=feature_columns, sport=sport)
+        for target in (targets or TARGETS)
+    ]
 
-    summary = {"trained_at": datetime.now(timezone.utc).isoformat(), "rows": len(df), "targets": reports}
-    (model_dir / "training_report.json").write_text(json.dumps(summary, indent=2))
+    summary = {
+        "sport": sport,
+        "trained_at": datetime.now(timezone.utc).isoformat(),
+        "rows": len(df),
+        "xgboost_available": XGBOOST_AVAILABLE,
+        "targets": reports,
+    }
+    model_dir.mkdir(parents=True, exist_ok=True)
+    (model_dir / report_filename(sport)).write_text(json.dumps(summary, indent=2))
     return summary
+
+
+def train_for_sport(adapter: Any, df: pd.DataFrame) -> dict[str, Any]:
+    """Train every target a sport declares, using that sport's feature columns."""
+    return train_models(
+        df,
+        targets=adapter.targets,
+        feature_columns=adapter.feature_columns,
+        sport=adapter.name,
+    )
