@@ -38,6 +38,11 @@ class User(Base):
 # pipeline reads.
 
 
+# Every competition and match belongs to exactly one sport. Defaulting to
+# football keeps rows written before this column existed valid.
+DEFAULT_SPORT = "football"
+
+
 class League(Base):
     __tablename__ = "leagues"
 
@@ -45,6 +50,8 @@ class League(Base):
     external_id = Column(Integer, unique=True, index=True, nullable=True)
     name = Column(String(120), nullable=False)
     country = Column(String(120), nullable=True)
+    sport = Column(String(20), index=True, nullable=False, default=DEFAULT_SPORT,
+                   server_default=DEFAULT_SPORT)
 
 
 class Team(Base):
@@ -67,8 +74,12 @@ class Match(Base):
     kickoff_time = Column(DateTime, index=True, nullable=False)
     status = Column(String(50), index=True, nullable=False)
     season = Column(Integer, index=True, nullable=True)
+    sport = Column(String(20), index=True, nullable=False, default=DEFAULT_SPORT,
+                   server_default=DEFAULT_SPORT)
 
-    # Full-time result; NULL until played. These are the training labels.
+    # Final result; NULL until played. These are the training labels. For
+    # basketball these hold points rather than goals - the column names are kept
+    # so the shared loaders and the existing rows do not need rewriting.
     home_goals = Column(Integer, nullable=True)
     away_goals = Column(Integer, nullable=True)
 
@@ -104,6 +115,8 @@ class PublishedTip(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     match_id = Column(Integer, ForeignKey("matches.id"), index=True, nullable=False)
+    sport = Column(String(20), index=True, nullable=False, default=DEFAULT_SPORT,
+                   server_default=DEFAULT_SPORT)
     market = Column(String(40), index=True, nullable=False)
     selection = Column(String(40), nullable=False)
     probability = Column(Float, nullable=False)
