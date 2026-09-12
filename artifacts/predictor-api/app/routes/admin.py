@@ -1,7 +1,6 @@
 """Admin dashboard, users, analytics, and operations routes."""
 
-import random
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -9,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import User
+from app.models import BettingSlip, Match, PublishedTip, User
 from app.routes.admin_auth import get_current_admin
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -18,42 +17,81 @@ CurrentAdmin = Annotated[User, Depends(get_current_admin)]
 
 # ── Dashboard analytics ──────────────────────────────────────────────────────
 
+LIVE_STATUSES = {"1H", "2H", "HT", "ET", "BT", "P", "LIVE"}
+
+
 @router.get("/analytics/dashboard")
 def dashboard(current: CurrentAdmin, db: Session = Depends(get_db)):
+    """Counts taken from the database.
+
+    Figures with no source return null rather than a plausible-looking number.
+    An admin dashboard is read to make decisions, and a made-up revenue figure
+    is worse than an empty one.
+    """
     total = db.query(User).count()
     active = db.query(User).filter(User.status == "active").count()
     premium = db.query(User).filter(User.subscription_type == "premium").count()
+
+    start_of_day = datetime.combine(datetime.utcnow().date(), time.min)
+    live = db.query(Match).filter(Match.status.in_(LIVE_STATUSES)).count()
+    published_today = (
+        db.query(PublishedTip).filter(PublishedTip.published_at >= start_of_day).count()
+    )
+    slips_today = (
+        db.query(BettingSlip).filter(BettingSlip.slip_date == datetime.utcnow().date()).count()
+    )
+
+    # Users created in the last 30 days against the 30 before that.
+    now = datetime.utcnow()
+    recent = db.query(User).filter(User.created_at >= now - timedelta(days=30)).count()
+    previous = (
+        db.query(User)
+        .filter(User.created_at >= now - timedelta(days=60), User.created_at < now - timedelta(days=30))
+        .count()
+    )
+    growth = round((recent - previous) / previous * 100, 1) if previous else None
+
     return {
         "total_users": total,
         "active_users": active,
         "premium_users": premium,
-        "live_matches": random.randint(3, 12),
-        "predictions_today": random.randint(8, 30),
-        "revenue": round(random.uniform(800, 3200), 2),
-        "monthly_growth": round(random.uniform(2.5, 15.0), 1),
+        "live_matches": live,
+        "predictions_today": published_today,
+        "slips_today": slips_today,
+        # No payment provider is integrated, so there is nothing to report.
+        "revenue": None,
+        "revenue_note": "No payment provider is connected, so revenue is not tracked.",
+        "monthly_growth": growth,
     }
 
 
 @router.get("/analytics/user-growth")
-def user_growth(current: CurrentAdmin):
+def user_growth(current: CurrentAdmin, db: Session = Depends(get_db)):
+    """Cumulative real signups per day over the last 30 days."""
     today = datetime.utcnow().date()
     series = []
-    base = 240
-    for i in range(30, 0, -1):
-        d = today - timedelta(days=i)
-        base += random.randint(-5, 25)
-        series.append({"date": d.isoformat(), "users": base})
+    for i in range(30, -1, -1):
+        day = today - timedelta(days=i)
+        cutoff = datetime.combine(day, time.max)
+        series.append({
+            "date": day.isoformat(),
+            "users": db.query(User).filter(User.created_at <= cutoff).count(),
+        })
     return series
 
 
 @router.get("/analytics/revenue")
-def revenue(current: CurrentAdmin):
-    today = datetime.utcnow().date()
-    series = []
-    for i in range(30, 0, -1):
-        d = today - timedelta(days=i)
-        series.append({"date": d.isoformat(), "revenue": round(random.uniform(50, 400), 2)})
-    return series
+def revenue(current: CurrentAdmin, db: Session = Depends(get_db)):
+    """Revenue is not tracked: no payment provider is connected.
+
+    Returns an empty series rather than invented figures, so a chart renders
+    empty instead of confidently wrong.
+    """
+    return {
+        "series": [],
+        "tracked": False,
+        "note": "No payment provider is connected, so there is no revenue to report.",
+    }
 
 
 # ── Users ────────────────────────────────────────────────────────────────────
