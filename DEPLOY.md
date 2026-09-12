@@ -72,6 +72,50 @@ the frontend shows "No model trained yet" rather than inventing predictions.
 
 ---
 
+## 1b. Using Supabase for Postgres
+
+Supabase can host the database instead of Render's. Nothing in the application
+changes: it is SQLAlchemy against Postgres either way, and the config already
+rewrites the `postgres://` scheme Supabase hands out into the driver form
+SQLAlchemy 2 requires.
+
+Take the connection string from **Settings → Database → Connection string**,
+not the REST API URL. The REST URL (`https://<ref>.supabase.co/rest/v1/`) is
+PostgREST and is not something SQLAlchemy can connect to.
+
+Supabase offers two:
+
+| Connection | Port | Use for |
+|---|---|---|
+| Direct | 5432 | Migrations, and long-running servers |
+| Transaction pooler | 6543 | Serverless and short-lived connections |
+
+Render runs a normal long-lived container, so use the **direct** connection.
+The transaction pooler does not support prepared statements, which SQLAlchemy
+uses by default.
+
+```bash
+export PREDICTOR_DATABASE_URL="postgresql://postgres:<password>@db.<ref>.supabase.co:5432/postgres"
+python scripts/check_database.py     # confirms the link, prints no credential
+python scripts/migrate_schema.py     # creates the tables
+```
+
+On Render, set `DATABASE_URL` to the same value and drop the `predictor-db`
+block from `render.yaml`.
+
+Two things to know. Free-tier Supabase projects pause after a week of
+inactivity and need waking from the dashboard. And the `service_role` key
+bypasses Row Level Security completely — it belongs only in server
+environment variables, never in the frontend or a repository.
+
+### Row Level Security
+
+This API connects as the database owner and enforces access in application
+code, through the existing admin RBAC. RLS is therefore not what protects your
+data here — the connection string is. If you later read tables directly from
+the browser with the publishable key, RLS becomes load-bearing and every table
+needs a policy before that happens.
+
 ## 2. Frontend → Vercel
 
 `vercel.json` at the repo root builds only `predictor-web` out of the pnpm
