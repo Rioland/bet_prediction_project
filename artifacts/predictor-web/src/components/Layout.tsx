@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 const NAV = [
   { href: "/", label: "Predictions", short: "Tips" },
   { href: "/selection", label: "Top picks", short: "Picks" },
+  { href: "/slips", label: "Slips", short: "Slips" },
   { href: "/fixtures", label: "Fixtures", short: "All" },
   { href: "/results", label: "Results", short: "Results" },
   { href: "/vip", label: "VIP", short: "VIP" },

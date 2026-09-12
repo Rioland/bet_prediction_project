@@ -228,6 +228,47 @@ export interface DailySelectionResponse {
   matches: FixtureAnalysis[];
 }
 
+export interface SlipLeg {
+  fixture_id: number;
+  home_team: string;
+  away_team: string;
+  league_name: string | null;
+  kickoff: string;
+  market: string;
+  selection: string;
+  label: string;
+  odds: number;
+  probability: number;
+  /** False when no bookmaker priced this leg, so its odds are a fair estimate. */
+  market_priced: boolean;
+}
+
+export interface BettingSlipData {
+  id: number;
+  tier: string;
+  label: string;
+  sport: string;
+  date: string;
+  legs: SlipLeg[];
+  leg_count: number;
+  total_odds: number;
+  /** True when some leg had no market price, so the total is an estimate. */
+  odds_are_estimates: boolean;
+  combined_probability: number;
+  /** Only ever a real code recorded by an admin; never generated. */
+  booking_code: string | null;
+  has_code: boolean;
+  result: "pending" | "won" | "lost" | "void";
+}
+
+export interface SlipsResponse {
+  date: string;
+  sport: string;
+  count: number;
+  with_codes: number;
+  slips: BettingSlipData[];
+}
+
 export interface Performance {
   settled: number;
   won: number;
@@ -284,7 +325,12 @@ export const api = {
     ),
   recentResults: (limit = 20) =>
     get<SettledTip[]>(`/api/football/results/recent?limit=${limit}`),
-  dailyPick: () => get<DailyPickResponse>("/api/football/pick/today"),
+  slips: (params: { date?: string; sport?: string } = {}) => {
+    const query = new URLSearchParams();
+    if (params.date) query.set("date", params.date);
+    if (params.sport) query.set("sport", params.sport);
+    return get<SlipsResponse>(`/api/slips?${query}`);
+  },
   fixtures: (params: { date?: string; leagueId?: number } = {}) => {
     const query = new URLSearchParams();
     if (params.date) query.set("date", params.date);
