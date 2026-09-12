@@ -14,8 +14,15 @@ from app.ml.features import FEATURE_COLUMNS, features_for_upcoming
 from app.ml.dataset import load_finished_matches
 from app.models import Match, User
 from app.services import results as results_service
-from app.services.analysis import DAILY_MAXIMUM, DAILY_TARGET, analyse, select_daily
-from app.services.prediction_service import predict
+from app.services.analysis import (
+    DAILY_MAXIMUM,
+    DAILY_TARGET,
+    LOOKAHEAD_DAYS,
+    analyse,
+    recommend,
+    select_daily,
+)
+from app.services.prediction_service import predict, predict_many
 from app.services.tips import (
     MARKETS,
     build_accumulator,
@@ -354,31 +361,97 @@ def all_fixtures(
     }
 
 
+def _candidates_from(db: Session, start: date_type, days: int) -> list[tuple[Match, dict]]:
+    """Upcoming fixtures with usable history, across a span of days."""
+    matches: list[Match] = []
+    for offset in range(days):
+        matches.extend(
+            m
+            for m in _matches_on(db, start + timedelta(days=offset), None)
+            if m.status not in FINISHED_STATUSES
+        )
+    feature_rows = _features_for(db, matches)
+    return [
+        (match, features)
+        for match in matches
+        if (features := feature_rows.get(match.id)) is not None and has_enough_history(features)
+    ]
+
+
 @router.get("/daily-selection")
 def daily_selection(
     db: DbSession,
     on_date: date_type | None = Query(default=None, alias="date"),
     limit: int = Query(default=DAILY_TARGET, ge=1, le=DAILY_MAXIMUM),
 ) -> dict:
-    """The day's shortlist, each fixture fully analysed.
+    """The day's shortlist, each selected fixture fully analysed.
 
-    Every fixture on the card is analysed, then the strongest are kept, one per
-    competition first so a single busy league cannot take every slot.
+    Candidates are ranked from a cheap pass over features and model output,
+    and only the fixtures that make the card get the full breakdown. Analysing
+    everything first and discarding most of it took roughly ten seconds on a
+    fifty-fixture day.
+
+    If the requested date cannot fill the card the window extends into the
+    following days, since fixture volume swings hard by weekday.
     """
-    matches = [m for m in _matches_on(db, on_date, None) if m.status not in FINISHED_STATUSES]
-    feature_rows = _features_for(db, matches)
+    start = on_date or datetime.utcnow().date()
+    candidates = _candidates_from(db, start, 1)
+    days_used = 1
 
-    analysed = [
-        analyse(db, match, features, _predict_from(features))
-        for match in matches
-        if (features := feature_rows.get(match.id)) is not None and has_enough_history(features)
+    # Reach forward only when the day itself is short.
+    while len(candidates) < limit and days_used <= LOOKAHEAD_DAYS:
+        days_used += 1
+        candidates = _candidates_from(db, start, days_used)
+
+    # One batched pass per target instead of three calls per fixture.
+    feature_rows = [features for _, features in candidates]
+    winners = predict_many("match_winner", feature_rows)
+    btts_all = predict_many("btts", feature_rows)
+    totals_all = predict_many("over_under_2_5", feature_rows)
+
+    ranked: list[dict] = []
+    for index, (match, features) in enumerate(candidates):
+        probs = winners[index]["probabilities"]
+        home_xg = (features["home_goals_scored_avg"] + features["away_goals_conceded_avg"]) / 2 * 1.08
+        away_xg = (features["away_goals_scored_avg"] + features["home_goals_conceded_avg"]) / 2 * 0.94
+        prediction = {
+            "home_win_prob": probs.get("H", 0.0),
+            "draw_prob": probs.get("D", 0.0),
+            "away_win_prob": probs.get("A", 0.0),
+            "btts_prob": btts_all[index]["probabilities"].get("yes", 0.0),
+            "over_25_prob": totals_all[index]["probabilities"].get("over", 0.0),
+            "home_xg": round(home_xg, 2),
+            "away_xg": round(away_xg, 2),
+        }
+        card = {
+            "home_team": match.home_team.name if match.home_team else "Home",
+            "away_team": match.away_team.name if match.away_team else "Away",
+            "odds_home": match.odds_home,
+            "odds_draw": match.odds_draw,
+            "odds_away": match.odds_away,
+        }
+        recommendation = recommend(build_tips(prediction, card))
+        if recommendation is None:
+            continue
+        ranked.append({
+            "match": match,
+            "features": features,
+            "prediction": prediction,
+            "league_name": match.league.name if match.league else None,
+            "recommendation": recommendation,
+        })
+
+    shortlist = select_daily(ranked, target=limit)
+    selected = [
+        analyse(db, entry["match"], entry["features"], entry["prediction"])
+        for entry in shortlist
     ]
-    chosen = select_daily(analysed, target=limit)
 
     return {
-        "date": (on_date or datetime.utcnow().date()).isoformat(),
-        "considered": len(matches),
-        "analysed": len(analysed),
-        "selected": len(chosen),
-        "matches": chosen,
+        "date": start.isoformat(),
+        "days_covered": days_used,
+        "considered": len(candidates),
+        "analysed": len(ranked),
+        "selected": len(selected),
+        "matches": selected,
     }

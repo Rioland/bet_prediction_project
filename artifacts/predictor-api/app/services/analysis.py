@@ -212,10 +212,15 @@ def analyse(db: Session, match: Match, features: dict[str, float], prediction: d
     }
 
 
-# The daily shortlist. Fewer than six rarely fills a card; beyond ten the
-# quality falls off fast, because the ranking is already exhausted.
-DAILY_TARGET = 7
-DAILY_MAXIMUM = 10
+# The daily shortlist. Ten is the published card size; the cap leaves headroom
+# without running the ranking dry.
+DAILY_TARGET = 10
+DAILY_MAXIMUM = 15
+
+# When a single day cannot fill the card, the selection reaches into following
+# days rather than publishing a short one. Fixture volume swings hard by
+# weekday - a Friday with one game sits beside a Saturday with fifty.
+LOOKAHEAD_DAYS = 3
 
 
 def selection_score(pick: dict[str, Any]) -> tuple[float, float]:

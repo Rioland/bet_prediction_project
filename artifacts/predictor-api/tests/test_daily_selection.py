@@ -182,3 +182,100 @@ def test_unanalysable_analysis_reports_how_much_history_exists(client, card, tra
     assert "Newcomer A" in detail and "Newcomer B" in detail
     assert "0 completed matches" in detail
     assert "fills in over time" in detail
+
+
+# --- card size, lookahead and probability flooring ---------------------------
+
+
+def test_card_targets_ten_games() -> None:
+    from app.services.analysis import DAILY_MAXIMUM, DAILY_TARGET
+
+    assert DAILY_TARGET == 10
+    assert DAILY_MAXIMUM >= DAILY_TARGET
+
+
+def test_selection_fills_to_ten_when_the_card_allows(client, card, trained_models) -> None:
+    body = client.get("/football/daily-selection").json()
+    assert body["selected"] == min(10, body["analysed"])
+
+
+def test_selection_reaches_into_later_days_when_today_is_thin(
+    client, db_session: Session, trained_models
+) -> None:
+    """Fixture volume swings hard by weekday; a quiet day must not shorten the card."""
+    league = League(external_id=77, name="League", country="X")
+    db_session.add(league)
+    teams = [Team(name=f"L{i}") for i in range(8)]
+    db_session.add_all(teams)
+    db_session.flush()
+
+    base = datetime.utcnow() - timedelta(days=70)
+    for i in range(60):
+        db_session.add(Match(
+            external_id=20_000 + i, league_id=league.id,
+            home_team_id=teams[i % 8].id, away_team_id=teams[(i + 3) % 8].id,
+            kickoff_time=base + timedelta(days=i), status="FT", season=2026,
+            home_goals=i % 4, away_goals=(i + 1) % 3,
+        ))
+
+    today = datetime.utcnow().replace(hour=12, minute=0, second=0, microsecond=0)
+    # One fixture today, several tomorrow.
+    db_session.add(Match(external_id=21_000, league_id=league.id, home_team_id=teams[0].id,
+                         away_team_id=teams[1].id, kickoff_time=today, status="NS", season=2026))
+    for j in range(6):
+        db_session.add(Match(
+            external_id=21_100 + j, league_id=league.id,
+            home_team_id=teams[j % 8].id, away_team_id=teams[(j + 2) % 8].id,
+            kickoff_time=today + timedelta(days=1, hours=j), status="NS", season=2026,
+        ))
+    db_session.commit()
+
+    body = client.get("/football/daily-selection").json()
+    assert body["days_covered"] > 1, "a one-fixture day should have reached forward"
+    assert body["selected"] > 1
+
+
+def test_no_outcome_is_reported_as_certain() -> None:
+    """Isotonic calibration emits hard zeros, which make double chance read 100%."""
+    from app.services.prediction_service import MIN_CLASS_PROBABILITY, floor_probabilities
+
+    floored = floor_probabilities([0.7784, 0.2216, 0.0])
+    assert min(floored) >= MIN_CLASS_PROBABILITY
+    assert sum(floored) == pytest.approx(1.0, abs=1e-9)
+    # Double chance can no longer total one.
+    assert floored[0] + floored[1] < 1.0
+
+
+def test_flooring_leaves_ordinary_probabilities_alone() -> None:
+    from app.services.prediction_service import floor_probabilities
+
+    assert floor_probabilities([0.5, 0.3, 0.2]) == pytest.approx([0.5, 0.3, 0.2])
+
+
+def test_batched_prediction_matches_single_row(client, card, trained_models) -> None:
+    """The fast path must not quietly disagree with the one it replaced."""
+    from app.ml.features import FEATURE_COLUMNS
+    from app.services.prediction_service import predict, predict_many
+
+    features = {c: 1.2 for c in FEATURE_COLUMNS}
+    features |= {"home_matches_played": 10, "away_matches_played": 10, "market_available": 0.0}
+
+    single = predict("match_winner", features)
+    batched = predict_many("match_winner", [features, features])
+
+    assert len(batched) == 2
+    assert batched[0]["prediction"] == single["prediction"]
+    assert batched[0]["probabilities"] == single["probabilities"]
+
+
+def test_batched_prediction_of_nothing_is_empty() -> None:
+    from app.services.prediction_service import predict_many
+
+    assert predict_many("match_winner", []) == []
+
+
+def test_flooring_handles_a_fully_degenerate_distribution() -> None:
+    """All-zero output should become uniform, not divide by zero."""
+    from app.services.prediction_service import floor_probabilities
+
+    assert floor_probabilities([0.0, 0.0, 0.0]) == pytest.approx([1 / 3, 1 / 3, 1 / 3])
