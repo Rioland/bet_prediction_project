@@ -220,6 +220,8 @@ export interface FixturesResponse {
 
 export interface DailySelectionResponse {
   date: string;
+  /** How many days the selection had to span to fill the card. */
+  days_covered: number;
   considered: number;
   analysed: number;
   selected: number;
@@ -301,9 +303,18 @@ export const api = {
   article: (slug: string) => get<Article>(`/api/news/${slug}`),
 };
 
-/** Probabilities are 0-1 everywhere in this API. */
-export const pct = (value: number | null | undefined) =>
-  value === null || value === undefined ? "—" : `${Math.round(value * 100)}%`;
+/**
+ * Probabilities are 0-1 everywhere in this API.
+ *
+ * Rounding is capped at 99%: the backend floors every class away from zero so
+ * nothing is ever certain, and rounding 0.995 up to "100%" would undo that at
+ * the last step. A displayed 100% reads as a guarantee, which no prediction is.
+ */
+export const pct = (value: number | null | undefined) => {
+  if (value === null || value === undefined) return "—";
+  const rounded = Math.round(value * 100);
+  return `${value < 1 ? Math.min(rounded, 99) : rounded}%`;
+};
 
 export const signed = (value: number | null | undefined, suffix = "") =>
   value === null || value === undefined
