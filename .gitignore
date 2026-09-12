@@ -59,3 +59,10 @@ __pycache__/
 
 # Local trained model artifacts
 models/
+
+# Environment files. This repository had no .env rule, which is how a .env with
+# live credentials reached public history in the sibling repo.
+.env
+.env.*
+!.env.example
+
