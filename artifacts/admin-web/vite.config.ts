@@ -12,6 +12,16 @@ const port = rawPort && !Number.isNaN(Number(rawPort)) && Number(rawPort) > 0
 
 const basePath = process.env.BASE_PATH ?? '/';
 
+// The admin app runs alongside predictor-web, which also defaults to 5173.
+const adminPort = rawPort && !Number.isNaN(Number(rawPort)) && Number(rawPort) > 0
+  ? Number(rawPort)
+  : 5174;
+
+// The Express api-server mounts its proxy at /api and forwards /api/admin/* to
+// the Python API's /admin/*. Strip the prefix here too so dev and production
+// hit identical backend paths.
+const apiTarget = process.env.API_URL ?? 'http://localhost:8000';
+
 export default defineConfig({
   base: basePath,
   plugins: [
@@ -50,16 +60,23 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
-    port,
+    port: adminPort,
     strictPort: true,
     host: '0.0.0.0',
     allowedHosts: true,
+    proxy: {
+      '/api': {
+        target: apiTarget,
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+    },
     fs: {
       strict: true,
     },
   },
   preview: {
-    port,
+    port: adminPort,
     host: '0.0.0.0',
     allowedHosts: true,
   },
