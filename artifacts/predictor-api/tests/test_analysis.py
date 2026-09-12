@@ -72,12 +72,14 @@ def test_head_to_head_with_no_meetings_is_empty_not_zero(db_session: Session) ->
 
 
 def test_recommendation_prefers_edge_over_raw_probability(db_session, rivals) -> None:
-    """A 82% double chance at 1.22 must not beat a 58% home win at 1.75."""
+    """Near-certain cover bets must not beat a 58% home win at a real price."""
     tips = build_tips(PREDICTION, CARD)
     best = recommend(tips)
 
+    # The highest raw probability is a cover bet - a +1.5 handicap or double
+    # chance - which is exactly what the recommendation must not lead with.
     top_by_probability = max(tips, key=lambda t: t.probability)
-    assert top_by_probability.selection == "1X"
+    assert top_by_probability.selection in {"1X", "1 (+1.5)"}
     assert best["selection"] == "1", f"expected the priced edge, got {best['selection']}"
     assert best["basis"] == "value"
 
@@ -92,7 +94,10 @@ def test_recommendation_falls_back_to_probability_without_odds(db_session) -> No
 def test_recommendation_is_none_when_nothing_clears_the_floor() -> None:
     flat = {"home_win_prob": 0.34, "draw_prob": 0.33, "away_win_prob": 0.33,
             "btts_prob": 0.40, "over_25_prob": 0.45, "home_xg": 0.6, "away_xg": 0.6}
-    tips = [t for t in build_tips(flat, CARD) if t.market not in ("double_chance", "under_3_5")]
+    # Cover bets and low-goal markets clear the floor almost regardless of the
+    # fixture, so they are removed to leave a genuinely flat card.
+    excluded = {"double_chance", "under_3_5", "handicap", "first_half"}
+    tips = [t for t in build_tips(flat, CARD) if t.market not in excluded]
     assert recommend(tips) is None
 
 

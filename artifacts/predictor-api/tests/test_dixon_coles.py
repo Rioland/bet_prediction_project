@@ -95,3 +95,61 @@ def test_predict_returns_every_market_consistently() -> None:
 
 def test_matrix_covers_the_realistic_scoreline_range() -> None:
     assert MAX_GOALS >= 9, "truncating below 9 goals loses non-trivial mass"
+
+
+# --- first half and handicap -------------------------------------------------
+
+
+def test_first_half_has_fewer_goals_than_the_match() -> None:
+    from app.ml.dixon_coles import first_half
+
+    half = first_half(1.9, 0.95)
+    assert half["expected_goals"] < 1.9 + 0.95
+
+
+def test_a_level_first_half_is_likelier_than_a_level_match() -> None:
+    """Fewer goals in a shorter period means more draws - the sanity check."""
+    from app.ml.dixon_coles import first_half
+
+    half = first_half(1.9, 0.95)
+    full = outcomes(score_matrix(1.9, 0.95))
+    assert half["draw"] > full["draw"]
+
+
+def test_first_half_outcomes_form_a_distribution() -> None:
+    from app.ml.dixon_coles import first_half
+
+    half = first_half(1.6, 1.2)
+    assert half["home_win"] + half["draw"] + half["away_win"] == pytest.approx(1.0, abs=1e-9)
+    assert half["over_0_5"] >= half["over_1_5"]
+
+
+def test_minus_half_handicap_equals_the_outright_win() -> None:
+    """A -0.5 handicap is the win market by another name; it must agree exactly."""
+    from app.ml.dixon_coles import handicap
+
+    assert handicap(1.9, 0.95, -0.5, "home") == pytest.approx(
+        outcomes(score_matrix(1.9, 0.95))["home_win"], abs=1e-9
+    )
+
+
+def test_handicap_is_monotonic_in_the_line() -> None:
+    from app.ml.dixon_coles import handicap
+
+    lines = [handicap(1.9, 0.95, line, "home") for line in (-2.5, -1.5, -0.5, 0.5, 1.5)]
+    assert lines == sorted(lines), "a more generous line cannot be less likely"
+
+
+def test_giving_start_beats_receiving_it_for_the_favourite() -> None:
+    from app.ml.dixon_coles import handicap
+
+    assert handicap(1.9, 0.95, -1.5, "home") < handicap(1.9, 0.95, 1.5, "home")
+
+
+def test_whole_number_handicaps_are_refused() -> None:
+    """A whole line can end level and push, returning the stake - one
+    probability cannot express win/lose/push."""
+    from app.ml.dixon_coles import handicap
+
+    with pytest.raises(ValueError, match="push"):
+        handicap(1.9, 0.95, -1.0, "home")

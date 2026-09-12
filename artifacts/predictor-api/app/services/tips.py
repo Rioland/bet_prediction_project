@@ -17,7 +17,7 @@ that says anything about whether a bet is worth placing.
 from dataclasses import dataclass
 from typing import Any
 
-from app.ml.dixon_coles import over_line, score_matrix, win_either_half
+from app.ml.dixon_coles import first_half, handicap, over_line, score_matrix, win_either_half
 
 # A tip is only surfaced if the model is at least this sure.
 MIN_PROBABILITY = 0.55
@@ -31,8 +31,8 @@ MIN_MEANINGFUL_EDGE = 0.005
 
 MARKETS = [
     "popular", "banker", "2_odds", "home_win", "away_win", "draws",
-    "double_chance", "either_half", "btts", "over_1_5", "over_2_5",
-    "under_3_5", "acca",
+    "double_chance", "either_half", "first_half", "first_half_goals",
+    "handicap", "btts", "over_1_5", "over_2_5", "under_3_5", "acca",
 ]
 
 
@@ -118,6 +118,47 @@ def build_tips(prediction: dict[str, Any], match: dict[str, Any]) -> list[Tip]:
              f"{away} take at least one half in "
              f"{win_either_half(home_xg, away_xg, 'away'):.0%} of modelled outcomes.",
              source="derived"),
+    ]
+
+    half = first_half(home_xg, away_xg)
+    tips += [
+        _tip("first_half", "1H1", f"{home} to lead at half time", half["home_win"], None,
+             f"{home} are ahead at the break in {half['home_win']:.0%} of modelled outcomes.",
+             source="derived"),
+        _tip("first_half", "1HX", "Level at half time", half["draw"], None,
+             f"Only {half['expected_goals']:.1f} goals are expected before the break, so a "
+             f"level half time is likelier than a level full time.",
+             source="derived"),
+        _tip("first_half", "1H2", f"{away} to lead at half time", half["away_win"], None,
+             f"{away} are ahead at the break in {half['away_win']:.0%} of modelled outcomes.",
+             source="derived"),
+        _tip("first_half_goals", "1H Over 0.5", "A goal in the first half",
+             half["over_0_5"], None,
+             f"{half['expected_goals']:.1f} goals expected before the break.", source="derived"),
+        _tip("first_half_goals", "1H Over 1.5", "Two goals in the first half",
+             half["over_1_5"], None,
+             f"{half['expected_goals']:.1f} goals expected before the break.", source="derived"),
+        # -1.5 is the handicap punters actually play: win by two clear goals.
+        _tip("handicap", "1 (-1.5)", f"{home} to win by 2+",
+             handicap(home_xg, away_xg, -1.5, "home"), None,
+             f"{home} win by two clear goals in "
+             f"{handicap(home_xg, away_xg, -1.5, 'home'):.0%} of modelled outcomes.",
+             source="derived"),
+        _tip("handicap", "2 (-1.5)", f"{away} to win by 2+",
+             handicap(home_xg, away_xg, -1.5, "away"), None,
+             f"{away} win by two clear goals in "
+             f"{handicap(home_xg, away_xg, -1.5, 'away'):.0%} of modelled outcomes.",
+             source="derived"),
+        _tip("handicap", "1 (+1.5)", f"{home} +1.5",
+             handicap(home_xg, away_xg, 1.5, "home"), None,
+             f"{home} avoid losing by two or more in "
+             f"{handicap(home_xg, away_xg, 1.5, 'home'):.0%} of modelled outcomes.",
+             source="derived"),
+        _tip("handicap", "2 (+1.5)", f"{away} +1.5",
+             handicap(home_xg, away_xg, 1.5, "away"), None,
+             f"{away} avoid losing by two or more in "
+             f"{handicap(home_xg, away_xg, 1.5, 'away'):.0%} of modelled outcomes.",
+             source="derived"),
         _tip("btts", "GG", "Both teams to score", prediction["btts_prob"], None,
              f"Both sides score in {prediction['btts_prob']:.0%} of modelled outcomes."),
         _tip("over_2_5", "Over 2.5", "Over 2.5 goals", prediction["over_25_prob"], None,
@@ -138,18 +179,30 @@ def best_tip(prediction: dict[str, Any], match: dict[str, Any]) -> Tip | None:
     return candidates[0] if candidates else None
 
 
-# Double chance is close to tautological - "1X" is by construction at least as
-# likely as "1" - so it dominates any probability ranking and would be the only
-# thing ever shown. It stays available as its own tab, but is kept out of the
-# mixed views.
-_EXCLUDED_FROM_MIXED = {"double_chance"}
+# Some selections are near-tautological: they win unless something unusual
+# happens, so they top any probability ranking and would be the only thing ever
+# shown. Double chance is one ("1X" is by construction at least as likely as
+# "1"); so is a +1.5 handicap, which only loses if a side is beaten by two or
+# more. Both stay available on their own tabs and are kept out of mixed views.
+#
+# The -1.5 handicap is the opposite - a genuinely demanding call - so it stays.
+_EXCLUDED_MARKETS_FROM_MIXED = {"double_chance"}
+
+
+def _is_cover_bet(tip: "Tip") -> bool:
+    """A selection that wins unless a side is beaten by a clear margin."""
+    return tip.market == "handicap" and "(+" in tip.selection
+
+
+def _excluded_from_mixed(tip: "Tip") -> bool:
+    return tip.market in _EXCLUDED_MARKETS_FROM_MIXED or _is_cover_bet(tip)
 
 
 def filter_by_market(tips: list[Tip], market: str) -> list[Tip]:
     if market in ("popular", "acca", "banker", "2_odds"):
         mixed = [
             t for t in tips
-            if t.market not in _EXCLUDED_FROM_MIXED and t.probability >= MIN_PROBABILITY
+            if not _excluded_from_mixed(t) and t.probability >= MIN_PROBABILITY
         ]
         # Among selections the model actually favours, lead with the one that
         # most beats its market price. Ranking on value alone would surface

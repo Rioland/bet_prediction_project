@@ -132,6 +132,43 @@ def win_either_half(lam_home: float, lam_away: float, side: str = "home") -> flo
     return 1 - (1 - p_first) * (1 - p_second)
 
 
+def first_half(lam_home: float, lam_away: float) -> dict[str, Any]:
+    """Markets on the first half alone, scored as its own short match."""
+    (h1_home, h1_away), _ = half_rates(lam_home, lam_away)
+    matrix = score_matrix(h1_home, h1_away)
+    result = outcomes(matrix)
+    return {
+        "home_win": result["home_win"],
+        "draw": result["draw"],
+        "away_win": result["away_win"],
+        "over_0_5": over_line(matrix, 0.5),
+        "over_1_5": over_line(matrix, 1.5),
+        "expected_goals": round(h1_home + h1_away, 2),
+    }
+
+
+def handicap(lam_home: float, lam_away: float, line: float, side: str = "home") -> float:
+    """P(side covers the handicap), read off the same scoreline distribution.
+
+    A handicap adds goals to one side before comparing. Only half lines are
+    supported: whole-number lines can end level and push, which returns the
+    stake rather than winning, and a single probability cannot express that.
+    """
+    if float(line).is_integer():
+        raise ValueError("Whole-number handicaps can push; use a half line such as -1.5.")
+
+    matrix = score_matrix(lam_home, lam_away)
+    covered = 0.0
+    for home_goals in range(MAX_GOALS):
+        for away_goals in range(MAX_GOALS):
+            if side == "home":
+                if home_goals + line > away_goals:
+                    covered += matrix[home_goals][away_goals]
+            elif away_goals + line > home_goals:
+                covered += matrix[home_goals][away_goals]
+    return covered
+
+
 def expected_goals(features: dict[str, float]) -> tuple[float, float]:
     """Expected goals from learned rolling rates.
 

@@ -32,7 +32,8 @@ export class ApiError extends Error {
 
 export type Market =
   | "popular" | "banker" | "2_odds" | "home_win" | "away_win" | "draws"
-  | "double_chance" | "btts" | "over_1_5" | "over_2_5" | "under_3_5" | "acca";
+  | "double_chance" | "either_half" | "first_half" | "first_half_goals"
+  | "handicap" | "btts" | "over_1_5" | "over_2_5" | "under_3_5" | "acca";
 
 export const MARKET_LABELS: Record<Market, string> = {
   popular: "Popular",
@@ -46,6 +47,10 @@ export const MARKET_LABELS: Record<Market, string> = {
   over_1_5: "Over 1.5",
   over_2_5: "Over 2.5",
   under_3_5: "Under 3.5",
+  either_half: "Either half",
+  first_half: "1st half",
+  first_half_goals: "1st half goals",
+  handicap: "Handicap",
   acca: "ACCA",
 };
 

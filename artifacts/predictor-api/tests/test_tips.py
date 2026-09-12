@@ -161,3 +161,40 @@ def test_win_either_half_beats_the_outright_win() -> None:
     tips = {(t.market, t.selection): t for t in build_tips(PREDICTION, MATCH)}
     assert tips[("either_half", "1WEH")].probability > tips[("home_win", "1")].probability
     assert tips[("either_half", "2WEH")].probability > tips[("away_win", "2")].probability
+
+
+def test_first_half_and_handicap_markets_are_offered() -> None:
+    markets = {t.market for t in build_tips(PREDICTION, MATCH)}
+    assert {"first_half", "first_half_goals", "handicap"} <= markets
+
+
+def test_first_half_selections_are_labelled_derived() -> None:
+    """No model is trained on half-time results; they come from the scoreline model."""
+    for tip in build_tips(PREDICTION, MATCH):
+        if tip.market in ("first_half", "first_half_goals", "handicap"):
+            assert tip.source == "derived", tip.selection
+
+
+def test_handicap_and_outright_stay_consistent() -> None:
+    """Winning by two or more must be rarer than simply winning."""
+    tips = {(t.market, t.selection): t for t in build_tips(PREDICTION, MATCH)}
+    assert tips[("handicap", "1 (-1.5)")].probability < tips[("home_win", "1")].probability
+    assert tips[("handicap", "1 (+1.5)")].probability > tips[("home_win", "1")].probability
+
+
+def test_cover_bets_are_kept_out_of_mixed_views() -> None:
+    """A +1.5 handicap wins unless a side loses by two, so it would top every
+    probability ranking exactly as double chance does."""
+    from app.services.tips import filter_by_market
+
+    for market in ("popular", "banker", "2_odds", "acca"):
+        for tip in filter_by_market(build_tips(PREDICTION, MATCH), market):
+            assert "(+" not in tip.selection, f"{tip.selection} surfaced in {market}"
+            assert tip.market != "double_chance"
+
+
+def test_cover_bets_remain_on_their_own_tab() -> None:
+    from app.services.tips import filter_by_market
+
+    selections = {t.selection for t in filter_by_market(build_tips(PREDICTION, MATCH), "handicap")}
+    assert any("(+" in s for s in selections), "the handicap tab should still offer them"

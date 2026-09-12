@@ -26,6 +26,9 @@ const MARKET_LABEL: Record<string, string> = {
   over_1_5: "Goals",
   over_2_5: "Goals",
   under_3_5: "Goals",
+  first_half: "First half",
+  first_half_goals: "First half goals",
+  handicap: "Handicap",
 };
 
 function PickCard({
