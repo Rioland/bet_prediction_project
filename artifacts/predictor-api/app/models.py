@@ -1,8 +1,10 @@
 from datetime import datetime
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     Column,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -11,6 +13,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy import text
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -143,4 +146,46 @@ class Article(Base):
     author = Column(String(120), nullable=True)
     published = Column(Boolean, default=False, index=True)
     published_at = Column(DateTime, index=True, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class BettingSlip(Base):
+    """A multi-leg slip built from the day's picks.
+
+    Slips are persisted rather than rebuilt per request. An admin may attach a
+    real SportyBet booking code to one, and that code has to keep pointing at
+    the selections it was created for - regenerating on the fly would leave a
+    published code describing a different slip.
+
+    booking_code is NULL until an admin supplies a real code. Nothing generates
+    one: a booking code is issued by the bookmaker when a slip is created on
+    their platform, so a fabricated value would resolve to nothing or to an
+    unrelated slip.
+    """
+
+    __tablename__ = "betting_slips"
+    __table_args__ = (UniqueConstraint("sport", "slip_date", "tier", name="uq_slip_tier"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    sport = Column(String(20), index=True, nullable=False, default=DEFAULT_SPORT,
+                   server_default=DEFAULT_SPORT)
+    slip_date = Column(Date, index=True, nullable=False)
+    # "banker" | "2_odds" | "acca_5" ... - the shape of the slip, one per day.
+    tier = Column(String(40), nullable=False)
+    label = Column(String(120), nullable=False)
+    legs = Column(JSON, nullable=False, default=list)
+    total_odds = Column(Float, nullable=False)
+    # True when some leg had no bookmaker price, so total_odds is a fair
+    # estimate (1 / probability, no margin) rather than an offered price.
+    odds_are_estimates = Column(Boolean, nullable=False, default=False,
+                                server_default=text("0"))
+    combined_probability = Column(Float, nullable=False)
+
+    # Supplied by an admin who created the slip on the bookmaker. Never generated.
+    booking_code = Column(String(40), nullable=True)
+    code_added_at = Column(DateTime, nullable=True)
+    code_added_by = Column(String(255), nullable=True)
+
+    result = Column(String(20), default="pending", index=True)  # pending|won|lost|void
+    settled_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

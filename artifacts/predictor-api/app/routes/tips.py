@@ -378,11 +378,8 @@ def _candidates_from(db: Session, start: date_type, days: int) -> list[tuple[Mat
     ]
 
 
-@router.get("/daily-selection")
-def daily_selection(
-    db: DbSession,
-    on_date: date_type | None = Query(default=None, alias="date"),
-    limit: int = Query(default=DAILY_TARGET, ge=1, le=DAILY_MAXIMUM),
+def select_for_date(
+    db: Session, start: date_type, limit: int = DAILY_TARGET
 ) -> dict:
     """The day's shortlist, each selected fixture fully analysed.
 
@@ -394,7 +391,6 @@ def daily_selection(
     If the requested date cannot fill the card the window extends into the
     following days, since fixture volume swings hard by weekday.
     """
-    start = on_date or datetime.utcnow().date()
     candidates = _candidates_from(db, start, 1)
     days_used = 1
 
@@ -447,6 +443,21 @@ def daily_selection(
         for entry in shortlist
     ]
 
+    # Every ranked fixture in leg shape. Slips draw on this rather than the
+    # shortlist: a market-themed slip needs several legs of one market, which
+    # a league-diverse top ten rarely contains.
+    pool = [
+        {
+            "fixture_id": entry["match"].external_id or entry["match"].id,
+            "home_team": entry["match"].home_team.name if entry["match"].home_team else "Home",
+            "away_team": entry["match"].away_team.name if entry["match"].away_team else "Away",
+            "league_name": entry["league_name"],
+            "kickoff": entry["match"].kickoff_time.isoformat(),
+            "recommendation": entry["recommendation"],
+        }
+        for entry in ranked
+    ]
+
     return {
         "date": start.isoformat(),
         "days_covered": days_used,
@@ -454,4 +465,18 @@ def daily_selection(
         "analysed": len(ranked),
         "selected": len(selected),
         "matches": selected,
+        "pool": pool,
     }
+
+
+@router.get("/daily-selection")
+def daily_selection(
+    db: DbSession,
+    on_date: date_type | None = Query(default=None, alias="date"),
+    limit: int = Query(default=DAILY_TARGET, ge=1, le=DAILY_MAXIMUM),
+) -> dict:
+    """The day's shortlist, each selected fixture fully analysed."""
+    result = select_for_date(db, on_date or datetime.utcnow().date(), limit)
+    # Internal only: the slip builder needs it, API consumers do not.
+    result.pop("pool", None)
+    return result

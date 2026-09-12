@@ -23,6 +23,7 @@ from app.routes.tips import router as tips_router
 from app.routes.news import router as news_router
 from app.routes.operations import router as operations_router
 from app.routes.predictions import router as predictions_router
+from app.routes.slips import router as slips_router
 from app.football_api import refresh_fixtures_loop
 
 
@@ -73,6 +74,7 @@ app.include_router(tips_router)
 app.include_router(news_router)
 app.include_router(predictions_router)
 app.include_router(operations_router)
+app.include_router(slips_router)
 
 
 @app.get("/healthz")

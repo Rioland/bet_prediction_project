@@ -26,7 +26,10 @@ ADDITIONS: dict[str, dict[str, str]] = {
     "leagues": {"sport": f"VARCHAR(20) NOT NULL DEFAULT '{DEFAULT_SPORT}'"},
     "matches": {"sport": f"VARCHAR(20) NOT NULL DEFAULT '{DEFAULT_SPORT}'"},
     "published_tips": {"sport": f"VARCHAR(20) NOT NULL DEFAULT '{DEFAULT_SPORT}'"},
+    "betting_slips": {"odds_are_estimates": "BOOLEAN NOT NULL DEFAULT 0"},
 }
+
+# betting_slips is created by create_all; no additive columns needed yet.
 
 INDEXES = [
     ("ix_leagues_sport", "leagues", "sport"),
