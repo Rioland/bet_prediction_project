@@ -1,0 +1,29 @@
+# Build context for deploy/web/Dockerfile (repository root).
+#
+# Secrets and local data first: a COPY . . must never be able to bake these
+# into an image, even when building from a working copy that has them.
+**/.env
+**/.env.*
+!**/.env.example
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+artifacts/predictor-api/models
+
+# The Python API is built separately from its own directory.
+artifacts/predictor-api
+
+# Regenerable output and caches.
+**/node_modules
+**/dist
+public
+**/*.tsbuildinfo
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+
+# Version control and editor noise.
+.git
+.migration-backup
+.claude
+**/.DS_Store

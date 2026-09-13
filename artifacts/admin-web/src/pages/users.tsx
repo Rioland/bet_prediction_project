@@ -102,7 +102,7 @@ export default function UsersPage() {
       )}
       <a
         className="text-sm text-primary underline"
-        href={`${import.meta.env.VITE_API_URL ?? "http://localhost:8000"}/admin/users/export`}
+        href={`${import.meta.env.VITE_API_URL ?? "/api"}/admin/users/export`}
       >
         Export CSV
       </a>

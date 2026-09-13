@@ -1,26 +1,28 @@
-# Render Blueprint for the Football AI Predictor API.
+# Render Blueprint: API, public website and admin site, all built with Docker.
 #
 # This file must stay at the repository root: Render's Blueprint flow only
-# looks for render.yaml there. rootDir below is what points it at the API.
+# looks for render.yaml there.
 #
 # Deploy: https://dashboard.render.com/blueprints -> New Blueprint Instance
 #
-# The frontend is deployed separately to Vercel; see DEPLOY.md.
+# Everything is on the free plan. What that means in practice:
+#   - Services sleep after 15 minutes without traffic; the next visitor waits
+#     about a minute while they wake. Upgrade `plan` to starter to avoid it.
+#   - The filesystem is wiped on every restart. Trained models are therefore
+#     also stored in the database and restored automatically.
+#   - Free services cannot reach each other over the private network, so the
+#     websites proxy to the API's public https address (API_UPSTREAM).
+#   - A free Render Postgres database expires 30 days after creation. Before
+#     then, upgrade it or point DATABASE_URL at another Postgres (e.g. Supabase).
 
 services:
   - type: web
     name: predictor-api
     runtime: docker
+    plan: free
     rootDir: artifacts/predictor-api
     dockerfilePath: Dockerfile
     healthCheckPath: /healthz
-    plan: starter
-    disk:
-      # Trained models are written by scripts/train_model.py and read at request
-      # time. Without a disk they vanish on every deploy and restart.
-      name: models
-      mountPath: /var/models
-      sizeGB: 1
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -28,11 +30,10 @@ services:
           property: connectionString
       - key: JWT_SECRET
         generateValue: true
-      - key: MODEL_DIR
-        value: /var/models
       - key: ENVIRONMENT
         value: production
-      # Your Vercel domain. Comma-separated for multiple origins.
+      # Only needed for browsers calling the API directly. The websites below
+      # proxy /api through their own domain, so they do not need listing.
       - key: CORS_ORIGINS
         sync: false
       # football-data.org key. Without it the API falls back to the keyless
@@ -65,8 +66,55 @@ services:
       - key: OPAY_PRODUCTION
         sync: false
 
+  # The websites are pnpm workspace packages, so they build from the repository
+  # root (no rootDir) - a rootDir would hide the shared lib/ packages.
+  - type: web
+    name: predictor-web
+    runtime: docker
+    plan: free
+    dockerfilePath: ./deploy/web/Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    buildFilter:
+      paths:
+        - artifacts/predictor-web/**
+        - lib/**
+        - deploy/web/**
+        - package.json
+        - pnpm-lock.yaml
+        - pnpm-workspace.yaml
+    envVars:
+      # Render passes env vars to docker build as build args: this picks the app.
+      - key: APP
+        value: predictor-web
+      # The API's public address, e.g. https://predictor-api.onrender.com
+      # Requests to /api/* on this site are forwarded there.
+      - key: API_UPSTREAM
+        sync: false
+
+  - type: web
+    name: predictor-admin
+    runtime: docker
+    plan: free
+    dockerfilePath: ./deploy/web/Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    buildFilter:
+      paths:
+        - artifacts/admin-web/**
+        - lib/**
+        - deploy/web/**
+        - package.json
+        - pnpm-lock.yaml
+        - pnpm-workspace.yaml
+    envVars:
+      - key: APP
+        value: admin-web
+      - key: API_UPSTREAM
+        sync: false
+
 databases:
   - name: predictor-db
     databaseName: predictor
     user: predictor
-    plan: basic-256mb
+    plan: free
