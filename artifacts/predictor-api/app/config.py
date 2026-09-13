@@ -56,3 +56,18 @@ CORS_ORIGINS = [
     for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
     if origin.strip()
 ]
+
+
+# ── OPay ─────────────────────────────────────────────────────────────────────
+# From the OPay merchant dashboard under API Keys & Webhooks. Never commit these
+# and never expose OPAY_SECRET_KEY to the browser.
+OPAY_MERCHANT_ID = os.getenv("OPAY_MERCHANT_ID", "").strip()
+OPAY_PUBLIC_KEY = os.getenv("OPAY_PUBLIC_KEY", "").strip()
+OPAY_SECRET_KEY = os.getenv("OPAY_SECRET_KEY", "").strip()
+# Staging unless explicitly switched. Real money only moves when this is set.
+OPAY_PRODUCTION = os.getenv("OPAY_PRODUCTION", "").strip().lower() in {"1", "true", "yes"}
+
+# Where the customer lands after paying, and where OPay posts the callback.
+# The callback must be a public HTTPS URL: OPay cannot reach localhost.
+PUBLIC_SITE_URL = os.getenv("PUBLIC_SITE_URL", "http://localhost:5173").rstrip("/")
+PUBLIC_API_URL = os.getenv("PUBLIC_API_URL", "http://localhost:8000").rstrip("/")

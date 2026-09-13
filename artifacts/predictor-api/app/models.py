@@ -189,3 +189,73 @@ class BettingSlip(Base):
     result = Column(String(20), default="pending", index=True)  # pending|won|lost|void
     settled_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ── Subscriptions and payments ───────────────────────────────────────────────
+
+
+class AppSetting(Base):
+    """Admin-editable configuration that must survive a restart.
+
+    Settings previously lived in a module-level dict, so an admin changing the
+    subscription price would see it silently revert the next time the server
+    restarted.
+    """
+
+    __tablename__ = "app_settings"
+
+    key = Column(String(80), primary_key=True)
+    value = Column(String(500), nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by = Column(String(255), nullable=True)
+
+
+class Payment(Base):
+    """One checkout attempt with the payment gateway.
+
+    The amount is fixed when checkout starts. If an admin changes the price
+    while a customer is mid-payment, the customer is charged, and verified
+    against, the price they were shown - not the new one.
+    """
+
+    __tablename__ = "payments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    provider = Column(String(30), nullable=False, default="opay")
+    # Our order reference, sent to the gateway. Random, so it cannot be guessed.
+    reference = Column(String(64), unique=True, index=True, nullable=False)
+    provider_order_no = Column(String(64), nullable=True, index=True)
+    # Kobo. The gateway works in the currency's minor unit.
+    amount_kobo = Column(Integer, nullable=False)
+    currency = Column(String(3), nullable=False, default="NGN")
+    status = Column(String(20), nullable=False, default="initial", index=True)
+    checkout_url = Column(String(1000), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    paid_at = Column(DateTime, nullable=True)
+    # Set once the subscription has been extended for this payment, so a
+    # retried callback cannot extend it twice.
+    applied_at = Column(DateTime, nullable=True)
+    failure_reason = Column(String(500), nullable=True)
+
+    user = relationship("User")
+
+
+class Subscription(Base):
+    """A user's paid access window.
+
+    Access is decided by expires_at alone. Nothing marks a subscription active
+    that is not backed by a verified payment.
+    """
+
+    __tablename__ = "subscriptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, index=True, nullable=False)
+    started_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    last_payment_id = Column(Integer, ForeignKey("payments.id"), nullable=True)
+    cancelled_at = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User")
