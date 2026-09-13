@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy import (
     JSON,
     Boolean,
+    LargeBinary,
     Column,
     Date,
     DateTime,
@@ -178,7 +179,7 @@ class BettingSlip(Base):
     # True when some leg had no bookmaker price, so total_odds is a fair
     # estimate (1 / probability, no margin) rather than an offered price.
     odds_are_estimates = Column(Boolean, nullable=False, default=False,
-                                server_default=text("0"))
+                                server_default=text("false"))
     combined_probability = Column(Float, nullable=False)
 
     # Supplied by an admin who created the slip on the bookmaker. Never generated.
@@ -259,3 +260,20 @@ class Subscription(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user = relationship("User")
+
+
+class ModelArtifact(Base):
+    """A trained model file, kept in the database as well as on disk.
+
+    Hosts with ephemeral filesystems (Render's free tier, most containers)
+    delete ./models on every restart. The database copy lets a fresh instance
+    restore the last trained models instead of serving 503 until someone
+    retrains.
+    """
+
+    __tablename__ = "model_artifacts"
+
+    filename = Column(String(120), primary_key=True)
+    data = Column(LargeBinary, nullable=False)
+    size_bytes = Column(Integer, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

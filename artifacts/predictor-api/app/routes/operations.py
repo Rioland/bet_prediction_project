@@ -13,7 +13,9 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, get_db
+from app.config import MODEL_DIR
 from app.ml.dataset import load_finished_matches
+from app.ml.model_store import publish_models
 from app.ml.train import MIN_ROWS, train_for_sport
 from app.models import User
 from app.routes.admin_auth import get_current_admin
@@ -39,6 +41,7 @@ def _retrain(sport: str) -> None:
     try:
         frame = adapter.build_dataset(_training_rows(db, sport))
         summary = train_for_sport(adapter, frame)
+        publish_models(MODEL_DIR, sport)  # survive a restart on ephemeral disks
         clear_model_cache()  # so the next request serves the new models
         logger.info("Retrained %s on %d rows", sport, summary["rows"])
     except Exception:

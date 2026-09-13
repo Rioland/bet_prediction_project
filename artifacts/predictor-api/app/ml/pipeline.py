@@ -23,6 +23,10 @@ def upcoming_frame(db: Session, league_ids: list[int] | None = None) -> pd.DataF
 def retrain(db: Session, league_ids: list[int] | None = None) -> dict[str, Any]:
     from app.services.prediction_service import clear_model_cache
 
+    from app.config import MODEL_DIR
+    from app.ml.model_store import publish_models
+
     summary = train_models(build_training_frame(db, league_ids))
+    publish_models(MODEL_DIR, "football")
     clear_model_cache()  # so the API serves the newly written models immediately
     return summary

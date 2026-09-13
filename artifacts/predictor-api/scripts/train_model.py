@@ -12,7 +12,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from app.config import MODEL_DIR  # noqa: E402
 from app.database import SessionLocal  # noqa: E402
+from app.ml.model_store import publish_models  # noqa: E402
 from app.ml.dataset import load_finished_matches  # noqa: E402
 from app.ml.train import train_for_sport  # noqa: E402
 from app.services.prediction_service import clear_model_cache  # noqa: E402
@@ -40,6 +42,8 @@ def main() -> int:
             return 1
         summary = train_for_sport(adapter, frame)
         clear_model_cache()
+        published = publish_models(MODEL_DIR, adapter.name)
+        print(f"stored {len(published)} file(s) in the database")
     finally:
         db.close()
 

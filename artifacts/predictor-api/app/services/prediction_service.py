@@ -60,6 +60,12 @@ def _load(target: str, sport: str = "football") -> dict[str, Any]:
 
     model_path = Path(MODEL_DIR) / model_filename(sport, target)
     if not model_path.exists():
+        # An ephemeral filesystem loses ./models on restart; the database keeps
+        # a copy of the last trained models.
+        from app.ml.model_store import restore_model
+
+        restore_model(model_path.name, MODEL_DIR)
+    if not model_path.exists():
         raise HTTPException(
             status_code=503,
             detail=(

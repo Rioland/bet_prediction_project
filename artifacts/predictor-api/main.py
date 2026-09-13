@@ -16,7 +16,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from app.database import Base, SessionLocal, engine
+from app.database import SessionLocal, engine
+from app.migrations import run_migrations
 from app.config import CORS_ORIGINS, FIXTURE_REFRESH_ENABLED
 from app.seed import seed_admin, seed_demo_users
 from app.routes.admin_auth import router as admin_auth_router
@@ -48,7 +49,8 @@ async def lifespan(app: FastAPI):
     # accepted connections and the app never replied - a silent hang with
     # nothing in the logs to act on. Now it starts, and says what is wrong.
     try:
-        Base.metadata.create_all(bind=engine)
+        for change in run_migrations(engine):
+            logging.getLogger(__name__).info("Schema migration: %s", change)
         db = SessionLocal()
         try:
             seed_admin(db)
