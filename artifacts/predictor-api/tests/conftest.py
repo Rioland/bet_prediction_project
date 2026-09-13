@@ -5,6 +5,9 @@ os.environ.setdefault("JWT_SECRET", "test-secret-for-pytest-only")
 # Otherwise the app lifespan fetches live fixtures and writes them into the
 # test database, making every count non-deterministic.
 os.environ["FIXTURE_REFRESH_ENABLED"] = "0"
+os.environ.setdefault("OPAY_MERCHANT_ID", "256612345678901")
+os.environ.setdefault("OPAY_PUBLIC_KEY", "OPAYPUB-test")
+os.environ.setdefault("OPAY_SECRET_KEY", "OPAYPRV-route-tests")
 
 import pytest
 from sqlalchemy import create_engine
@@ -13,6 +16,11 @@ from sqlalchemy.pool import StaticPool
 
 import app.database as db_module
 from app.database import Base
+from app.rate_limit import limiter
+
+# Rate limits are asserted in test_account.py; leaving them on everywhere would
+# make unrelated tests fail depending on the order they run in.
+limiter.enabled = False
 
 TEST_ENGINE = create_engine(
     "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool

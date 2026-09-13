@@ -140,6 +140,18 @@ def get_current_admin(
     return user
 
 
+# Moderators can pass get_current_admin, which is right for moderation work
+# but not for anything that moves money or decides what subscribers are sold.
+FULL_ADMIN_ROLES = {"admin", "super_admin"}
+
+
+def get_full_admin(current: User = Depends(get_current_admin)) -> User:
+    """An admin or super admin - never a moderator."""
+    if current.role not in FULL_ADMIN_ROLES:
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    return current
+
+
 @router.get("/me")
 def me(current: User = Depends(get_current_admin)):
     return _user_dict(current)

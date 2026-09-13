@@ -8,16 +8,28 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import BettingSlip, Match, PublishedTip, User
-from app.routes.admin_auth import get_current_admin
+from app.models import BettingSlip, Match, Payment, PublishedTip, Subscription, User
+from app.services import subscriptions as subs
+from app.routes.admin_auth import get_current_admin, get_full_admin
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 CurrentAdmin = Annotated[User, Depends(get_current_admin)]
+FullAdmin = Annotated[User, Depends(get_full_admin)]
 
 
 # ── Dashboard analytics ──────────────────────────────────────────────────────
 
 LIVE_STATUSES = {"1H", "2H", "HT", "ET", "BT", "P", "LIVE"}
+
+
+def _revenue_this_month(db: Session) -> float:
+    """Naira collected this calendar month, from verified payments only."""
+    start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    total_kobo = sum(
+        p.amount_kobo for p in db.query(Payment)
+        .filter(Payment.applied_at.isnot(None), Payment.paid_at >= start).all()
+    )
+    return round(total_kobo / 100, 2)
 
 
 @router.get("/analytics/dashboard")
@@ -58,9 +70,9 @@ def dashboard(current: CurrentAdmin, db: Session = Depends(get_db)):
         "live_matches": live,
         "predictions_today": published_today,
         "slips_today": slips_today,
-        # No payment provider is integrated, so there is nothing to report.
-        "revenue": None,
-        "revenue_note": "No payment provider is connected, so revenue is not tracked.",
+        # Only payments verified with the gateway and applied to a subscription.
+        "revenue": _revenue_this_month(db),
+        "revenue_note": None,
         "monthly_growth": growth,
     }
 
@@ -82,16 +94,20 @@ def user_growth(current: CurrentAdmin, db: Session = Depends(get_db)):
 
 @router.get("/analytics/revenue")
 def revenue(current: CurrentAdmin, db: Session = Depends(get_db)):
-    """Revenue is not tracked: no payment provider is connected.
-
-    Returns an empty series rather than invented figures, so a chart renders
-    empty instead of confidently wrong.
-    """
-    return {
-        "series": [],
-        "tracked": False,
-        "note": "No payment provider is connected, so there is no revenue to report.",
-    }
+    """Daily naira collected over the last 30 days, from verified payments."""
+    today = datetime.utcnow().date()
+    series = []
+    for i in range(30, -1, -1):
+        day = today - timedelta(days=i)
+        start = datetime.combine(day, time.min)
+        end = datetime.combine(day, time.max)
+        kobo = sum(
+            p.amount_kobo for p in db.query(Payment)
+            .filter(Payment.applied_at.isnot(None), Payment.paid_at >= start, Payment.paid_at <= end)
+            .all()
+        )
+        series.append({"date": day.isoformat(), "revenue": round(kobo / 100, 2)})
+    return series
 
 
 # ── Users ────────────────────────────────────────────────────────────────────
@@ -174,27 +190,82 @@ def update_status(user_id: int, body: StatusUpdate, current: CurrentAdmin, db: S
 
 @router.get("/subscriptions")
 def list_subscriptions(current: CurrentAdmin, db: Session = Depends(get_db)):
-    users = db.query(User).filter(User.subscription_type == "premium").all()
+    """Real subscriptions, with expiry as stored.
+
+    This previously reported every premium user as a Stripe subscription
+    expiring thirty days from the moment of the request - so nothing could ever
+    expire, and there was no Stripe.
+    """
+    now = datetime.utcnow()
+    rows = db.query(Subscription).order_by(Subscription.expires_at.desc()).all()
     return [
         {
-            "id": u.id,
-            "user": {"id": u.id, "name": u.name, "email": u.email},
-            "provider": "stripe",
-            "status": "active",
-            "expires_at": (datetime.utcnow() + timedelta(days=30)).isoformat(),
+            "id": sub.id,
+            "user": {"id": sub.user.id, "name": sub.user.name, "email": sub.user.email}
+            if sub.user else None,
+            "provider": "opay",
+            "status": "active" if sub.expires_at > now else "expired",
+            "started_at": sub.started_at.isoformat(),
+            "expires_at": sub.expires_at.isoformat(),
         }
-        for u in users
+        for sub in rows
     ]
 
 
 @router.patch("/subscriptions/{sub_id}/cancel")
-def cancel_subscription(sub_id: int, current: CurrentAdmin, db: Session = Depends(get_db)):
-    u = db.get(User, sub_id)
-    if not u:
+def cancel_subscription(sub_id: int, current: FullAdmin, db: Session = Depends(get_db)):
+    """End access now. Does not refund - issue any refund through OPay."""
+    sub = db.get(Subscription, sub_id)
+    if not sub:
         raise HTTPException(status_code=404, detail="Not found")
-    u.subscription_type = "free"
+    sub.expires_at = datetime.utcnow()
+    sub.cancelled_at = datetime.utcnow()
+    if sub.user:
+        sub.user.subscription_type = "free"
     db.commit()
     return {"status": "cancelled"}
+
+
+class PriceUpdate(BaseModel):
+    price_naira: str
+
+
+@router.get("/subscription-price")
+def get_subscription_price(current: FullAdmin, db: Session = Depends(get_db)):
+    return {
+        "price_naira": float(subs.get_price_naira(db)),
+        "currency": "NGN",
+        "period_days": subs.PERIOD_DAYS,
+        "min_naira": float(subs.MIN_PRICE_NAIRA),
+        "max_naira": float(subs.MAX_PRICE_NAIRA),
+    }
+
+
+@router.put("/subscription-price")
+def update_subscription_price(body: PriceUpdate, current: FullAdmin, db: Session = Depends(get_db)):
+    """Change the price for new checkouts. Payments already started are unaffected."""
+    try:
+        price = subs.set_price_naira(db, body.price_naira, current.email)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"price_naira": float(price), "currency": "NGN"}
+
+
+@router.get("/payments")
+def list_payments(current: FullAdmin, db: Session = Depends(get_db)):
+    rows = db.query(Payment).order_by(Payment.created_at.desc()).limit(100).all()
+    return [
+        {
+            "reference": p.reference,
+            "user_email": p.user.email if p.user else None,
+            "amount_naira": p.amount_kobo / 100,
+            "status": p.status,
+            "created_at": p.created_at.isoformat(),
+            "paid_at": p.paid_at.isoformat() if p.paid_at else None,
+            "failure_reason": p.failure_reason,
+        }
+        for p in rows
+    ]
 
 
 # ── Notifications ────────────────────────────────────────────────────────────

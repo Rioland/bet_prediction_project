@@ -255,7 +255,14 @@ def settle_slips(db: Session, sport: str = "football") -> dict[str, int]:
     return counts
 
 
-def to_dict(slip: BettingSlip) -> dict[str, Any]:
+def to_dict(slip: BettingSlip, can_see_code: bool = True) -> dict[str, Any]:
+    """Serialise a slip.
+
+    The booking code is what subscribers pay for, so it is only included for
+    viewers with access. Everyone else still learns that a code exists - that
+    is the reason to subscribe - but not what it is.
+    """
+    has_code = slip.booking_code is not None
     return {
         "id": slip.id,
         "tier": slip.tier,
@@ -269,8 +276,9 @@ def to_dict(slip: BettingSlip) -> dict[str, Any]:
         # estimate rather than a price anyone is offering.
         "odds_are_estimates": bool(slip.odds_are_estimates),
         "combined_probability": slip.combined_probability,
-        "booking_code": slip.booking_code,
+        "booking_code": slip.booking_code if can_see_code else None,
         # False means "build it yourself from the selections", never a fake code.
-        "has_code": slip.booking_code is not None,
+        "has_code": has_code,
+        "code_locked": has_code and not can_see_code,
         "result": slip.result,
     }
