@@ -22,9 +22,22 @@ from app.rate_limit import limiter
 # make unrelated tests fail depending on the order they run in.
 limiter.enabled = False
 
-TEST_ENGINE = create_engine(
-    "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-)
+# SQLite by default, for speed. Production runs PostgreSQL, and the two disagree
+# on things tests must catch - a BOOLEAN column with DEFAULT 0 is valid SQLite
+# and a hard error in PostgreSQL. Point TEST_DATABASE_URL at a disposable
+# Postgres database to run the suite there:
+#
+#   TEST_DATABASE_URL=postgresql://localhost/predictor_test python -m pytest
+TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "").strip()
+
+if TEST_DATABASE_URL:
+    from app.config import _normalise_database_url
+
+    TEST_ENGINE = create_engine(_normalise_database_url(TEST_DATABASE_URL), pool_pre_ping=True)
+else:
+    TEST_ENGINE = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
 TestSessionLocal = sessionmaker(bind=TEST_ENGINE, autoflush=False, autocommit=False)
 
 db_module.engine = TEST_ENGINE

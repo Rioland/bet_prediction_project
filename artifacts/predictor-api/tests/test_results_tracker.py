@@ -69,12 +69,14 @@ def test_performance_reports_nothing_when_there_is_nothing(db_session: Session) 
 
 def test_performance_computes_strike_rate_and_roi(db_session: Session) -> None:
     now = datetime.utcnow()
+    # A real match: PostgreSQL enforces the foreign key that SQLite ignores.
+    match = _match(db_session, kickoff=now)
     # Two winners at 1.8, two losers: staked 4, returned 3.6 -> -10% ROI.
     for i, (result, odds) in enumerate(
         [("won", 1.8), ("won", 1.8), ("lost", 1.8), ("lost", 1.8)]
     ):
         db_session.add(PublishedTip(
-            match_id=1, market="home_win", selection=str(i), probability=0.6, odds=odds,
+            match_id=match.id, market="home_win", selection=str(i), probability=0.6, odds=odds,
             published_at=now, kickoff_time=now, result=result,
         ))
     db_session.commit()
@@ -88,7 +90,8 @@ def test_performance_computes_strike_rate_and_roi(db_session: Session) -> None:
 
 def test_pending_tips_are_excluded_from_performance(db_session: Session) -> None:
     now = datetime.utcnow()
-    db_session.add(PublishedTip(match_id=1, market="m", selection="1", probability=0.6,
+    match = _match(db_session, kickoff=now)
+    db_session.add(PublishedTip(match_id=match.id, market="m", selection="1", probability=0.6,
                                 odds=2.0, published_at=now, kickoff_time=now,
                                 result="pending"))
     db_session.commit()
