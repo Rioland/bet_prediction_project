@@ -19,7 +19,7 @@ ENV PATH=$PNPM_HOME:$PATH
 
 # The version the lockfile was produced with. Pinned so a new pnpm release
 # cannot reinterpret the lockfile mid-deploy.
-RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
+RUN corepack enable && corepack prepare pnpm@10.34.5 --activate
 
 WORKDIR /repo
 

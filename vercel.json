@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "pnpm --filter @workspace/predictor-web run build && rm -rf public && cp -r artifacts/predictor-web/dist/public public",
-  "installCommand": "pnpm install --frozen-lockfile",
+  "buildCommand": "npx --yes pnpm@10.34.5 --filter @workspace/predictor-web run build && rm -rf public && cp -r artifacts/predictor-web/dist/public public",
+  "installCommand": "npx --yes pnpm@10.34.5 install --frozen-lockfile",
   "outputDirectory": "public",
   "rewrites": [
     {
