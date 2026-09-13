@@ -262,3 +262,21 @@ def test_unconfigured_client_refuses_to_call_out() -> None:
     ))
     with pytest.raises(OPayNotConfigured):
         client.query_status("SUB-ABC123")
+
+
+def test_status_body_uses_the_field_order_opay_accepts() -> None:
+    """OPay re-serialises the body to check the signature, so order is load-bearing.
+
+    Against the sandbox, country-first returned 00000 and reference-first
+    returned 02000 Authentication failed, with the same key and reference.
+    """
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["raw"] = request.content.decode()
+        return httpx.Response(200, json={"code": "00000", "data": {"status": "SUCCESS"}})
+
+    OPayClient(CONFIG, transport=httpx.MockTransport(handler)).query_status("SUB-ABC123")
+
+    assert seen["raw"] == '{"country":"NG","reference":"SUB-ABC123"}'
+    assert " " not in seen["raw"], "the spaced form is rejected too"

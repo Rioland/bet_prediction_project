@@ -228,9 +228,17 @@ class OPayClient:
     def query_status(self, reference: str) -> dict[str, Any]:
         """Ask OPay directly for a payment's state.
 
-        The signature must cover the exact bytes sent, so the body is serialised
-        once and that same string is both signed and posted.
+        Field order is load-bearing. OPay does not verify the signature against
+        the bytes it receives; it re-serialises the body in its own order and
+        compares. Verified against the sandbox with one key and one reference:
+
+            {"country":"NG","reference":"..."}   00000 SUCCESSFUL
+            {"reference":"...","country":"NG"}   02000 Authentication failed
+
+        Whitespace matters for the same reason - the spaced form is rejected -
+        so the body is built in the documented order with compact separators,
+        and that exact string is both signed and posted.
         """
         self._require_config()
-        body = json.dumps({"reference": reference, "country": COUNTRY}, separators=(",", ":"))
+        body = json.dumps({"country": COUNTRY, "reference": reference}, separators=(",", ":"))
         return self._post(STATUS_PATH, body, sign_status_body(body, self.config.secret_key))
