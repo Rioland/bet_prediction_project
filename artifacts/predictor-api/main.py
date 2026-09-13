@@ -7,11 +7,14 @@ There is deliberately no default admin credential.
 """
 
 import asyncio
+import logging
 import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from app.database import Base, SessionLocal, engine
 from app.config import CORS_ORIGINS, FIXTURE_REFRESH_ENABLED
@@ -31,16 +34,31 @@ from slowapi.errors import RateLimitExceeded
 from app.football_api import refresh_fixtures_loop
 
 
+# Set when database setup fails, so /healthz can report why instead of the
+# service simply not answering.
+STARTUP_ERROR: str | None = None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create all tables on startup
-    Base.metadata.create_all(bind=engine)
-    db = SessionLocal()
+    global STARTUP_ERROR
+
+    # Database setup must not be able to stop the app from serving. A hosted
+    # database that is unreachable used to block startup here, so the platform
+    # accepted connections and the app never replied - a silent hang with
+    # nothing in the logs to act on. Now it starts, and says what is wrong.
     try:
-        seed_admin(db)
-        seed_demo_users(db)
-    finally:
-        db.close()
+        Base.metadata.create_all(bind=engine)
+        db = SessionLocal()
+        try:
+            seed_admin(db)
+            seed_demo_users(db)
+        finally:
+            db.close()
+    except Exception as exc:
+        STARTUP_ERROR = f"{type(exc).__name__}: {str(exc).splitlines()[0][:300]}"
+        logging.getLogger(__name__).exception("Database setup failed; serving in a degraded state")
+
     refresh_task = (
         asyncio.create_task(refresh_fixtures_loop()) if FIXTURE_REFRESH_ENABLED else None
     )
@@ -87,7 +105,31 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 @app.get("/healthz")
 def healthz():
-    return {"status": "ok", "service": "football-ai-predictor-api"}
+    """Liveness, plus whether the database is actually usable.
+
+    Deliberately does no database work of its own beyond a trivial probe, so it
+    still answers when the database is down - that answer is the diagnosis.
+    """
+    database = "ok"
+    detail = None
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except Exception as exc:
+        database = "unavailable"
+        detail = f"{type(exc).__name__}: {str(exc).splitlines()[0][:300]}"
+
+    healthy = database == "ok" and STARTUP_ERROR is None
+    return JSONResponse(
+        status_code=200 if healthy else 503,
+        content={
+            "status": "ok" if healthy else "degraded",
+            "service": "football-ai-predictor-api",
+            "database": database,
+            "database_error": detail,
+            "startup_error": STARTUP_ERROR,
+        },
+    )
 
 
 if __name__ == "__main__":

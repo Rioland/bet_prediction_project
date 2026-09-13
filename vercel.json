@@ -6,7 +6,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://REPLACE-WITH-YOUR-BACKEND-HOST/:path*"
+      "destination": "https://bet-prediction-api.onrender.com/:path*"
     },
     {
       "source": "/((?!api/).*)",
