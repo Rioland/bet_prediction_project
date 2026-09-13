@@ -27,7 +27,9 @@ Render runs a normal long-lived container, so all three stop being problems.
 
 ## 1. Backend → Render
 
-`render.yaml` at `artifacts/predictor-api/` is a Blueprint. In the Render
+`render.yaml` at the **repository root** is a Blueprint. It has to live there:
+Render only looks for it at the root, and `rootDir` inside it is what points at
+the API directory. In the Render
 dashboard: **Blueprints → New Blueprint Instance**, point it at this repo.
 
 It provisions a web service, a Postgres database, and a 1 GB disk mounted at

@@ -1,5 +1,9 @@
 # Render Blueprint for the Football AI Predictor API.
-# Deploy: connect the repo at https://dashboard.render.com/blueprints
+#
+# This file must stay at the repository root: Render's Blueprint flow only
+# looks for render.yaml there. rootDir below is what points it at the API.
+#
+# Deploy: https://dashboard.render.com/blueprints -> New Blueprint Instance
 #
 # The frontend is deployed separately to Vercel; see DEPLOY.md.
 
@@ -40,6 +44,25 @@ services:
       - key: DEFAULT_ADMIN_EMAIL
         sync: false
       - key: DEFAULT_ADMIN_PASSWORD
+        sync: false
+      # Public URLs. PUBLIC_API_URL is where OPay posts payment callbacks, so
+      # it must be this service's own https address - OPay cannot reach
+      # localhost, and a wrong value means paid subscriptions never activate.
+      - key: PUBLIC_SITE_URL
+        sync: false
+      - key: PUBLIC_API_URL
+        sync: false
+      # OPay. From the merchant dashboard under API Keys & Webhooks.
+      # OPAY_SECRET_KEY signs callbacks and status queries; never expose it.
+      - key: OPAY_MERCHANT_ID
+        sync: false
+      - key: OPAY_PUBLIC_KEY
+        sync: false
+      - key: OPAY_SECRET_KEY
+        sync: false
+      # Leave unset to stay on OPay staging. Setting this moves real money, so
+      # only set it after a full sandbox payment has been tested end to end.
+      - key: OPAY_PRODUCTION
         sync: false
 
 databases:
