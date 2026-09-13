@@ -16,6 +16,8 @@ import NotificationsPage from "@/pages/notifications";
 import OperationsPage from "@/pages/operations";
 import ReportsPage from "@/pages/reports";
 import SettingsPage from "@/pages/settings";
+import BookingCodesPage from "@/pages/booking-codes";
+import PricingPage from "@/pages/pricing";
 import SubscriptionsPage from "@/pages/subscriptions";
 import UsersPage from "@/pages/users";
 import UserDetailsPage from "@/pages/user-details";
@@ -78,6 +80,12 @@ function AppRoutes() {
       </Route>
       <Route path="/analytics">
         <ProtectedRoute path="/analytics" component={AnalyticsPage} />
+      </Route>
+      <Route path="/booking-codes">
+        <ProtectedRoute path="/booking-codes" component={BookingCodesPage} />
+      </Route>
+      <Route path="/pricing">
+        <ProtectedRoute path="/pricing" component={PricingPage} />
       </Route>
       <Route path="/notifications">
         <ProtectedRoute path="/notifications" component={NotificationsPage} />

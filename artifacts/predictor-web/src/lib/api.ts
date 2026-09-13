@@ -7,19 +7,67 @@
  */
 
 const BASE = import.meta.env.VITE_API_BASE ?? "";
+const TOKEN_KEY = "session_access_token";
 
-async function get<T>(path: string, init?: RequestInit): Promise<T> {
+/**
+ * The customer's access token.
+ *
+ * Kept in localStorage so a session survives a reload. That makes it readable
+ * by any script on the page, so the site must not load untrusted third-party
+ * scripts; the token is also short-lived and never grants admin access.
+ */
+export const session = {
+  get: (): string | null => {
+    try {
+      return localStorage.getItem(TOKEN_KEY);
+    } catch {
+      return null;
+    }
+  },
+  set: (token: string) => {
+    try {
+      localStorage.setItem(TOKEN_KEY, token);
+    } catch {
+      /* private browsing: the session lasts until the tab closes */
+    }
+  },
+  clear: () => {
+    try {
+      localStorage.removeItem(TOKEN_KEY);
+    } catch {
+      /* nothing to clear */
+    }
+  },
+};
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const token = session.get();
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (init.body) headers["Content-Type"] = "application/json";
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
   const response = await fetch(`${BASE}${path}`, {
-    credentials: "include",
-    headers: { Accept: "application/json" },
     ...init,
+    headers: { ...headers, ...(init.headers as Record<string, string> | undefined) },
   });
+
+  if (response.status === 401 && token) {
+    // An expired or revoked session: drop it rather than retrying forever.
+    session.clear();
+  }
   if (!response.ok) {
     const detail = await response.json().catch(() => ({}));
-    throw new ApiError(response.status, detail?.detail ?? response.statusText);
+    const message = Array.isArray(detail?.detail)
+      ? detail.detail.map((d: { msg?: string }) => d.msg).filter(Boolean).join("; ")
+      : detail?.detail;
+    throw new ApiError(response.status, message ?? response.statusText);
   }
   return response.json() as Promise<T>;
 }
+
+const get = <T,>(path: string) => request<T>(path);
+const post = <T,>(path: string, body?: unknown) =>
+  request<T>(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) });
 
 export class ApiError extends Error {
   constructor(
@@ -263,6 +311,8 @@ export interface BettingSlipData {
   /** Only ever a real code recorded by an admin; never generated. */
   booking_code: string | null;
   has_code: boolean;
+  /** A code exists but this viewer needs an active subscription to see it. */
+  code_locked: boolean;
   result: "pending" | "won" | "lost" | "void";
 }
 
@@ -271,7 +321,49 @@ export interface SlipsResponse {
   sport: string;
   count: number;
   with_codes: number;
+  codes_unlocked: boolean;
   slips: BettingSlipData[];
+}
+
+export interface AccountUser {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+}
+
+export interface SessionResponse {
+  access_token: string;
+  refresh_token: string;
+  user: AccountUser;
+}
+
+export interface SubscriptionState {
+  active: boolean;
+  expires_at: string | null;
+  days_left: number | null;
+  price_naira: number;
+  period_days: number;
+  staff: boolean;
+}
+
+export interface Me extends AccountUser {
+  subscription: SubscriptionState;
+}
+
+export interface Plan {
+  price_naira: number;
+  currency: string;
+  period_days: number;
+  payments_enabled: boolean;
+}
+
+export interface PaymentRecord {
+  reference: string;
+  amount_naira: number;
+  status: string;
+  created_at: string;
+  paid_at: string | null;
 }
 
 export interface Performance {
@@ -330,6 +422,21 @@ export const api = {
     ),
   recentResults: (limit = 20) =>
     get<SettledTip[]>(`/api/football/results/recent?limit=${limit}`),
+  register: (body: { name: string; email: string; password: string }) =>
+    post<SessionResponse>("/api/auth/register", body),
+  login: (body: { email: string; password: string }) =>
+    post<SessionResponse>("/api/auth/login", body),
+  me: () => get<Me>("/api/auth/me"),
+  plan: () => get<Plan>("/api/subscription/plan"),
+  checkout: () =>
+    post<{ reference: string; checkout_url: string; amount_naira: number }>(
+      "/api/subscription/checkout",
+    ),
+  verifyPayment: (reference: string) =>
+    post<{ status: string; subscription: SubscriptionState }>(
+      `/api/subscription/verify/${encodeURIComponent(reference)}`,
+    ),
+  payments: () => get<PaymentRecord[]>("/api/subscription/payments"),
   slips: (params: { date?: string; sport?: string } = {}) => {
     const query = new URLSearchParams();
     if (params.date) query.set("date", params.date);

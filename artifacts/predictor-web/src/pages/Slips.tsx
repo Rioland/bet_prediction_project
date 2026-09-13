@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Check, Copy, Info, Ticket } from "lucide-react";
+import { Link } from "wouter";
+import { Check, Copy, Info, Lock, Ticket } from "lucide-react";
 import { Layout } from "@/components/Layout";
 import { DateStrip } from "@/components/DateStrip";
 import { Card } from "@/components/ui/card";
@@ -81,6 +82,14 @@ function SlipCard({ slip }: { slip: BettingSlipData }) {
       <div className="flex items-center justify-between gap-2 border-t border-border/30 pt-3">
         {slip.has_code && slip.booking_code ? (
           <CopyCode code={slip.booking_code} />
+        ) : slip.code_locked ? (
+          <Link
+            href="/account"
+            className="flex items-center gap-1.5 rounded-sm border border-primary/30 bg-primary/5 px-2 py-1 font-mono text-[11px] text-primary hover:bg-primary/10"
+          >
+            <Lock className="h-3 w-3" />
+            Booking code for subscribers
+          </Link>
         ) : (
           <p className="text-[11px] leading-relaxed text-muted-foreground">
             No booking code for this slip — add the selections above to your betslip.
@@ -122,6 +131,18 @@ export default function Slips() {
       <div className="mb-6">
         <DateStrip selected={date} onSelect={setDate} />
       </div>
+
+      {data && data.with_codes > 0 && !data.codes_unlocked && (
+        <Card className="mb-5 flex flex-wrap items-center justify-between gap-3 border-primary/30 bg-primary/5 p-4">
+          <p className="text-sm">
+            <span className="font-semibold">{data.with_codes} booking {data.with_codes === 1 ? "code" : "codes"}</span>{" "}
+            available for this date — load a slip straight into your betslip.
+          </p>
+          <Button asChild size="sm">
+            <Link href="/account">Subscribe to unlock</Link>
+          </Button>
+        </Card>
+      )}
 
       {data && data.with_codes === 0 && data.count > 0 && (
         <Card className="mb-5 flex items-start gap-2 border-border/40 bg-card/30 p-3">

@@ -1,5 +1,6 @@
 import { Link, useLocation } from "wouter";
-import { Activity } from "lucide-react";
+import { Activity, UserRound } from "lucide-react";
+import { useAccount } from "@/hooks/use-account";
 import { cn } from "@/lib/utils";
 
 // Short labels keep all four items on screen at 375px without a cut-off.
@@ -15,6 +16,7 @@ const NAV = [
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
+  const { user } = useAccount();
 
   return (
     <div className="min-h-[100dvh] flex flex-col bg-background text-foreground dark">
@@ -47,6 +49,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <span className="hidden sm:inline">{item.label}</span>
               </Link>
             ))}
+            <Link
+              href={user ? "/account" : "/login"}
+              className={cn(
+                "ml-1 flex shrink-0 items-center gap-1 whitespace-nowrap rounded-sm border px-2 py-1 font-mono text-[11px] uppercase tracking-wider transition-colors sm:text-xs",
+                user?.subscription.active
+                  ? "border-emerald-500/40 text-emerald-400"
+                  : "border-border/60 text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <UserRound className="h-3 w-3" />
+              {user ? "Account" : "Sign in"}
+            </Link>
           </nav>
         </div>
       </header>

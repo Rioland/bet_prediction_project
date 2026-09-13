@@ -9,6 +9,8 @@ import type { AdminRole } from "@/types/auth";
 
 const links: { href: string; label: string; minRole: AdminRole }[] = [
   { href: "/dashboard", label: "Dashboard", minRole: "admin" },
+  { href: "/booking-codes", label: "Booking codes", minRole: "admin" },
+  { href: "/pricing", label: "Pricing & payments", minRole: "admin" },
   { href: "/users", label: "Users", minRole: "moderator" },
   { href: "/analytics", label: "Analytics", minRole: "admin" },
   { href: "/subscriptions", label: "Subscriptions", minRole: "admin" },

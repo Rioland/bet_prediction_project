@@ -14,6 +14,8 @@ export function hasMinimumRole(role: AdminRole, minimum: AdminRole): boolean {
 
 export const ROUTE_MIN_ROLES: Record<string, AdminRole> = {
   "/dashboard": "admin",
+  "/booking-codes": "admin",
+  "/pricing": "admin",
   "/users": "moderator",
   "/analytics": "admin",
   "/subscriptions": "admin",

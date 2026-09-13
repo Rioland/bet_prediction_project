@@ -21,8 +21,10 @@ export default function DashboardPage() {
     ["Predictions Today", data.predictions_today],
     ["Slips Today", data.slips_today ?? 0],
     [
-      "Revenue",
-      data.revenue === null || data.revenue === undefined ? "—" : `$${data.revenue}`,
+      "Revenue this month",
+      data.revenue === null || data.revenue === undefined
+        ? "—"
+        : new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN" }).format(data.revenue),
       data.revenue === null || data.revenue === undefined ? data.revenue_note : undefined,
     ],
     [
