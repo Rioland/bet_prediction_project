@@ -69,3 +69,4 @@ models/
 
 # Vercel build output, assembled by the build command.
 /public
+/artifacts/predictor-web/public

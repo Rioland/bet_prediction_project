@@ -49,6 +49,9 @@ export default defineConfig({
     dedupe: ['react', 'react-dom'],
   },
   root: path.resolve(import.meta.dirname),
+  // Not the default public/: vercel.json copies the build into public/ in
+  // whichever directory Vercel runs from, which may be this one.
+  publicDir: path.resolve(import.meta.dirname, 'static'),
   build: {
     outDir: path.resolve(import.meta.dirname, 'dist/public'),
     emptyOutDir: true,
