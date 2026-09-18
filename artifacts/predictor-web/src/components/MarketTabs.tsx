@@ -3,8 +3,9 @@ import { cn } from "@/lib/utils";
 
 const ORDER: Market[] = [
   "popular", "banker", "2_odds", "home_win", "away_win", "draws",
-  "double_chance", "either_half", "first_half", "first_half_goals", "handicap",
-  "btts", "over_1_5", "over_2_5", "under_3_5", "acca",
+  "double_chance", "either_half", "anytime_lead", "first_half",
+  "first_half_goals", "ht_ft", "handicap", "win_to_nil", "clean_sheet",
+  "btts", "over_1_5", "over_2_5", "under_3_5", "team_goals", "odd_even", "acca",
 ];
 
 export function MarketTabs({

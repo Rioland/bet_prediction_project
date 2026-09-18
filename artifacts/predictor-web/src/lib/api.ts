@@ -80,8 +80,10 @@ export class ApiError extends Error {
 
 export type Market =
   | "popular" | "banker" | "2_odds" | "home_win" | "away_win" | "draws"
-  | "double_chance" | "either_half" | "first_half" | "first_half_goals"
-  | "handicap" | "btts" | "over_1_5" | "over_2_5" | "under_3_5" | "acca";
+  | "double_chance" | "either_half" | "anytime_lead" | "first_half"
+  | "first_half_goals" | "ht_ft" | "handicap" | "win_to_nil" | "clean_sheet"
+  | "btts" | "over_1_5" | "over_2_5" | "under_3_5" | "team_goals"
+  | "odd_even" | "acca";
 
 export const MARKET_LABELS: Record<Market, string> = {
   popular: "Popular",
@@ -96,9 +98,15 @@ export const MARKET_LABELS: Record<Market, string> = {
   over_2_5: "Over 2.5",
   under_3_5: "Under 3.5",
   either_half: "Either half",
+  anytime_lead: "To lead",
   first_half: "1st half",
   first_half_goals: "1st half goals",
+  ht_ft: "HT/FT",
   handicap: "Handicap",
+  win_to_nil: "Win to nil",
+  clean_sheet: "Clean sheet",
+  team_goals: "Team goals",
+  odd_even: "Odd/Even",
   acca: "ACCA",
 };
 
